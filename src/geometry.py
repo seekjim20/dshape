@@ -20,17 +20,25 @@ class Polygon:
     Attributes:
         vertices: Array of shape (max_vertices, 2) containing vertex coordinates.
         count: Integer or scalar array indicating the number of valid vertices.
+        overflow: Boolean indicating if the logical vertex count exceeded the buffer size.
     """
 
     vertices: jnp.ndarray
     count: jnp.ndarray | int
+    overflow: bool = False
 
     def tree_flatten(self):
-        return ((self.vertices, self.count), None)
+        # We treat overflow as metadata (auxiliary) usually, but since it might be
+        # produced by JIT-ed code (as a boolean tensor), it should be a child?
+        # If it's a python bool, it's aux. If it's a tracer/array, it's child.
+        # To be safe for JIT, we treat it as a child if it can be a tracer.
+        # However, usually boolean flags are better as children to allow gradients/tracing?
+        # Boolean is not differentiable, but it is traced.
+        return ((self.vertices, self.count, self.overflow), None)
 
     @classmethod
     def tree_unflatten(cls, aux, children):
-        return Polygon(children[0], children[1])
+        return Polygon(children[0], children[1], children[2])
 
     @property
     @jax.jit

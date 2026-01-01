@@ -12,7 +12,7 @@ from geometry import Polygon
 
 @jax.jit(static_argnames=["max_vertices"])
 def intersection(
-    polygon1: Polygon, polygon2: Polygon, max_vertices: int = 100
+    polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256
 ) -> Polygon:
     """Computes the intersection of two polygons using the Sutherland-Hodgman algorithm.
 
@@ -20,20 +20,36 @@ def intersection(
         - polygon2 is convex and vertices are in counter-clockwise order.
         - max_vertices is sufficient to hold the result.
 
-    Args:
+    args:
         polygon1: Subject polygon.
         polygon2: Clip polygon (Must be CONVEX and CCW).
         max_vertices: Size of the output buffer.
 
     Returns:
         The intersection polygon.
+
+    Warning:
+        If the result requires more than `max_vertices`, the polygon will be truncated
+        and the `overflow` flag will be set to `True`. Check `result.overflow`
+        and retry with a larger `max_vertices` if necessary.
     """
     vertices, count = _intersection(polygon1.vertices, polygon2.vertices, max_vertices)
-    return Polygon(vertices=vertices, count=count)
+
+    # Check for overflow:
+    # 1. Output overflow (count reached limit)
+    # 2. Input overflow (inputs were truncated before processing).
+    #    Note: _intersection iterates polygon2 fully (if valid JAX loop), but clamps polygon1.
+    input_ovf = polygon1.count > max_vertices
+    res_ovf = count >= max_vertices
+
+    overflow = input_ovf | res_ovf
+    safe_count = jnp.minimum(count, max_vertices)
+
+    return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
 
 
 @jax.jit(static_argnames=["max_vertices"])
-def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 100) -> Polygon:
+def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256) -> Polygon:
     """Computes the union of two polygons (P1 U P2).
 
     Approximation:
@@ -48,12 +64,18 @@ def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 100) -> Poly
 
     Returns:
         The union polygon.
+
+    Warning:
+        If the result requires more than `max_vertices`, the polygon will be truncated
+        and the `overflow` flag will be set to `True`. Check `result.overflow`
+        and retry with a larger `max_vertices` if necessary.
     """
     # Robust implementation using segment stitching
     # 1. Collect segments of A outside B
     # 2. Collect segments of B outside A
     # 3. Stitch
 
+    # Use max_vertices for capacity estimation
     seg1, count1 = _get_clipped_segments(
         polygon1.vertices,
         polygon1.count,
@@ -72,9 +94,8 @@ def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 100) -> Poly
         keep_inside=False,
     )
 
-    # Pad to safe size
-    # We assume _get_clipped_segments returns segments of capacity 200 (hardcoded in _get_clipped_segments)
-    capacity = 200
+    # Pad to safe size (using 2x for safety as in _get_clipped_segments)
+    capacity = max_vertices * 2
 
     # We need to concatenate seg1 (valid 0..count1) and seg2 (valid 0..count2)
     # Using jnp.concatenate on raw seg1/seg2 is WRONG because seg1 has padding at end which would separate valid seg1 from valid seg2.
@@ -89,12 +110,21 @@ def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 100) -> Poly
     # Stitch
     vertices, count = _stitch_segments(all_segments, all_count, max_vertices)
 
-    return Polygon(vertices=vertices, count=count)
+    # Input overflow logic
+    # _get_clipped_segments uses max_vertices for capacity.
+    # If inputs are huge, it might truncate.
+    input_ovf = (polygon1.count > max_vertices) | (polygon2.count > max_vertices)
+    res_ovf = count >= max_vertices
+    overflow = input_ovf | res_ovf
+
+    safe_count = jnp.minimum(count, max_vertices)
+
+    return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
 
 
 @jax.jit(static_argnames=["max_vertices"])
 def difference(
-    polygon1: Polygon, polygon2: Polygon, max_vertices: int = 100
+    polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256
 ) -> Polygon:
     """Computes the difference P1 - P2.
 
@@ -105,6 +135,11 @@ def difference(
 
     Returns:
         The difference polygon.
+
+    Warning:
+        If the result requires more than `max_vertices`, the polygon will be truncated
+        and the `overflow` flag will be set to `True`. Check `result.overflow`
+        and retry with a larger `max_vertices` if necessary.
     """
     # Difference = Parts of P1 OUTSIDE P2 + Parts of P2 INSIDE P1 (reversed)
     # Why P2 inside P1 reversed? Imagine P1 is big square, P2 is hole.
@@ -133,7 +168,7 @@ def difference(
     seg2 = seg2[:, ::-1, :]
 
     # Pack segments
-    capacity = 200
+    capacity = max_vertices * 2
     all_segments = jnp.zeros((capacity * 2, 2, 2))
     all_segments = jax.lax.dynamic_update_slice(all_segments, seg1, (0, 0, 0))
     all_segments = jax.lax.dynamic_update_slice(all_segments, seg2, (count1, 0, 0))
@@ -142,11 +177,19 @@ def difference(
 
     vertices, count = _stitch_segments(all_segments, all_count, max_vertices)
 
-    return Polygon(vertices=vertices, count=count)
+    vertices, count = _stitch_segments(all_segments, all_count, max_vertices)
+
+    input_ovf = (polygon1.count > max_vertices) | (polygon2.count > max_vertices)
+    res_ovf = count >= max_vertices
+    overflow = input_ovf | res_ovf
+
+    safe_count = jnp.minimum(count, max_vertices)
+
+    return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
 
 
 @jax.jit(static_argnames=["max_vertices"])
-def buffer(polygon: Polygon, distance: float, max_vertices: int = 1000) -> Polygon:
+def buffer(polygon: Polygon, distance: float, max_vertices: int = 256) -> Polygon:
     """Computes the buffer of a polygon.
 
     Args:
@@ -156,23 +199,42 @@ def buffer(polygon: Polygon, distance: float, max_vertices: int = 1000) -> Polyg
 
     Returns:
         Buffered polygon.
+
+    Warning:
+        If the result requires more than `max_vertices`, the polygon will be truncated
+        and the `overflow` flag will be set to `True`. Check `result.overflow`
+        and retry with a larger `max_vertices` if necessary.
     """
     vertices, count = _buffer(polygon.vertices, polygon.count, distance, max_vertices)
-    return Polygon(vertices=vertices, count=count)
+
+    # Note: _buffer usually cleans vertices, so checking input count > max_vertices
+    # might be too aggressive if cleaning reduces it significantly.
+    # But usually buffer INCREASES count. So if input > output cap, it's risky.
+    # _buffer implementation handles input iteration.
+
+    # Keep output overflow check primarily.
+    overflow = count >= max_vertices
+    safe_count = jnp.minimum(count, max_vertices)
+
+    return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
 
 
 def offset(polygon: Polygon, dx: float, dy: float) -> Polygon:
-    """Offset a polygon by (dx, dy).
+    """Translates the polygon by (dx, dy).
 
     Args:
         polygon: Input polygon.
-        dx: X offset.
-        dy: Y offset.
+        dx: X translation.
+        dy: Y translation.
 
     Returns:
         Offset polygon.
     """
-    return Polygon(vertices=polygon.vertices + jnp.array([dx, dy]), count=polygon.count)
+    return Polygon(
+        vertices=polygon.vertices + jnp.array([dx, dy]),
+        count=polygon.count,
+        overflow=polygon.overflow,
+    )
 
 
 def _intersection(
@@ -201,9 +263,16 @@ def _intersection(
 
     # We maintain a buffer of vertices. Initial subject polygon.
     # Pad to max_vertices
-    curr_len = subject_polygon.shape[0]
+    # CLAMPING: We must limit the input to max_vertices to prevent OOB.
+    input_len = subject_polygon.shape[0]
+    # Use python min to keep it static for slicing
+    curr_len = min(input_len, max_vertices)
+
     padded_subject = jnp.zeros((max_vertices, 2))
-    padded_subject = padded_subject.at[:curr_len].set(subject_polygon)
+    padded_subject = padded_subject.at[:curr_len].set(subject_polygon[:curr_len])
+
+    # If we clamped the input, we are already overflowing logic-wise if we cared about strictness.
+    # But checking input overflow is separate. Here we just prevent crash.
 
     # State for the scan over clip edges:
     # (current_subject_vertices, current_count)
@@ -212,7 +281,7 @@ def _intersection(
     def clip_edge_scan_body(state, clip_edge):
         # clip_edge is ((2,), (2,)) representing (cp1, cp2)
         in_vertices, in_count = state
-        cp1, cp2 = clip_edge
+        cp1, clip_p2 = clip_edge
 
         # We need to create the next set of vertices
         out_vertices = jnp.zeros((max_vertices, 2))
@@ -245,13 +314,13 @@ def _intersection(
             # 1. Check if valid processing (i < in_count)
             is_valid_step = i < in_count
 
-            curr_in = _is_inside(curr_v, cp1, cp2)
-            prev_in = _is_inside(prev_v, cp1, cp2)
+            curr_in = _is_inside(curr_v, cp1, clip_p2)
+            prev_in = _is_inside(prev_v, cp1, clip_p2)
 
             # Intersection point
             # For gradients to flow, we compute intersection even if not needed strictly, or mask it?
             # Actually we only use it if needed.
-            intersect_p = _line_intersection(prev_v, curr_v, cp1, cp2)
+            intersect_p = _line_intersection(prev_v, curr_v, cp1, clip_p2)
 
             # Cases:
             # 1. Both inside: add curr
@@ -263,7 +332,7 @@ def _intersection(
 
             # Case 1: prev_in & curr_in -> Add curr
             # Case 2: prev_in & !curr_in -> Add intersection
-            # Case 3: !prev_in & curr_in -> Add intersection, Add curr
+            # Case 3: !prev_in & curr_in -> Add intersection, Add Curr
             # Case 4: !prev_in & !curr_in -> Do nothing
 
             # To vectorize/simplify:
@@ -308,13 +377,18 @@ def _intersection(
     # Prepare clip edges for scan
     # Shift clip polygon to get pairs
     clip_p1 = clip_polygon
-    clip_p2 = jnp.roll(clip_polygon, -1, axis=0)  # (M, 2)
-    clip_edges = jnp.stack([clip_p1, clip_p2], axis=1)  # (M, 2, 2)
+    indices = jnp.arange(clip_polygon.shape[0])
+    next_indices = jnp.where(indices + 1 >= clip_polygon.shape[0], 0, indices + 1)
+    clip_p2 = clip_polygon[next_indices]
 
-    # Run the main loop over clip edges
-    final_state, _ = jax.lax.scan(clip_edge_scan_body, init_state, clip_edges)
+    # We zip them
+    clip_edges = (clip_p1, clip_p2)
 
-    return final_state
+    # Scan over clip edges
+    scan_result, _ = jax.lax.scan(clip_edge_scan_body, init_state, clip_edges)
+
+    final_vertices, final_count = scan_result
+    return final_vertices, final_count
 
 
 def _get_clipped_segments(
@@ -328,7 +402,9 @@ def _get_clipped_segments(
     # Capacity for intermediate segments.
     # Max segments likely <= max_out_verts * 2.
     # We define capacity for the expanded segments.
-    capacity = 200  # Fixed internal capacity for safety
+    # OLD: capacity = 200  # Fixed internal capacity for safety
+    # NEW: Use static dynamic size based on output requirement
+    capacity = max_out_verts * 2
 
     # 1. Expand Subject Edge to Sub-segments
     exp_verts, exp_count = _insert_intersections(
@@ -1072,8 +1148,6 @@ def _buffer(
 
     # 6. Stitch
     vertices, count = _stitch_segments(final_seg_buf, final_seg_count, max_vertices)
-
-    return vertices, count
 
     return vertices, count
 
