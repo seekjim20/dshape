@@ -638,7 +638,8 @@ def _stitch_segments(
             o4 = orientation(_p_start, _p_end, p2)
 
             # Strict crossing check
-            intersect = (o1 * o2 < -1e-5) & (o3 * o4 < -1e-5)
+            # Use tighter tolerance to avoid false positives on valid bridging or touching segments
+            intersect = (o1 * o2 < -1e-7) & (o3 * o4 < -1e-7)
 
             # Compute intersection point
             pt = _line_intersection(p1, p2, _p_start, _p_end)
@@ -670,7 +671,11 @@ def _stitch_segments(
         head_len = target_k
         keep_loop = loop_len > head_len
 
-        do_prune = (case > 0) & has_int
+        # Only prune self-intersections for natural segment continuation (Case 1).
+        # We disable pruning for Bridging (Case 3) to prevent corrupting disjoint components
+        # (forcing a bad bridge is better than cutting the polygon).
+        # We also disable for Backtracking (Case 2) as it follows known paths.
+        do_prune = (case == 1) & has_int
 
         # Case A: Keep Head (Prune Loop)
         # Reset ptr to target_k + 1, set buf[target_k] = intersection
@@ -710,6 +715,10 @@ def _stitch_segments(
         # Fix Stack if pruned (cancel incomplete moves)
         sp = jnp.where(do_prune & (case == 3), sp - 1, sp)
         sp = jnp.where(do_prune & (case == 2), sp + 1, sp)
+
+        # DEBUG PRUNING
+        # jax.debug.print("Step {i}: prune={pr} kp={kp} ptr={ptr} new_ptr={nptr}",
+        #                 i=step_idx, pr=do_prune, kp=keep_loop, ptr=ptr, nptr=new_ptr)
 
         return (next_p, new_prev_p, mask, ptr, buf, stack, sp), None
 
