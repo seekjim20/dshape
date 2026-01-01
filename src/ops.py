@@ -42,7 +42,12 @@ def intersection(
     input_ovf = polygon1.count > max_vertices
     res_ovf = count >= max_vertices
 
+    # If count reached the limit, we assume overflow/truncation risk
     overflow = input_ovf | res_ovf
+
+    # Clean the output to remove duplicates
+    vertices, count = _clean_vertices(vertices, count)
+
     safe_count = jnp.minimum(count, max_vertices)
 
     return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
@@ -117,6 +122,9 @@ def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256) -> Poly
     res_ovf = count >= max_vertices
     overflow = input_ovf | res_ovf
 
+    # Clean the output to remove duplicates
+    vertices, count = _clean_vertices(vertices, count)
+
     safe_count = jnp.minimum(count, max_vertices)
 
     return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
@@ -177,11 +185,12 @@ def difference(
 
     vertices, count = _stitch_segments(all_segments, all_count, max_vertices)
 
-    vertices, count = _stitch_segments(all_segments, all_count, max_vertices)
-
     input_ovf = (polygon1.count > max_vertices) | (polygon2.count > max_vertices)
     res_ovf = count >= max_vertices
     overflow = input_ovf | res_ovf
+
+    # Clean the output to remove duplicates
+    vertices, count = _clean_vertices(vertices, count)
 
     safe_count = jnp.minimum(count, max_vertices)
 
@@ -214,6 +223,10 @@ def buffer(polygon: Polygon, distance: float, max_vertices: int = 256) -> Polygo
 
     # Keep output overflow check primarily.
     overflow = count >= max_vertices
+
+    # Clean the output to remove duplicates
+    vertices, count = _clean_vertices(vertices, count)
+
     safe_count = jnp.minimum(count, max_vertices)
 
     return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
