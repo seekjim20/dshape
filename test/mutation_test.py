@@ -2,8 +2,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 import geometry
-from src import mutation as mut_ops
-from src import core  # For _is_point_in_polygon usage in tests
+import mutation
+import core  # For _is_point_in_polygon usage in tests
 
 
 class TestOpsBase:
@@ -20,7 +20,7 @@ class TestBuffer(TestOpsBase):
     def test_buffer_square_positive(self):
         rect = geometry.Rectangle(-1, -1, 2, 2)
         dist = 0.5
-        buffered = mut_ops.buffer(rect, dist)
+        buffered = mutation.buffer(rect, dist)
         area = buffered.area
         assert area > 4.0
         assert jnp.abs(area - 8.785) < 0.2
@@ -29,7 +29,7 @@ class TestBuffer(TestOpsBase):
     def test_buffer_square_negative(self):
         rect = geometry.Rectangle(-1, -1, 2, 2)
         dist = -0.5
-        buffered = mut_ops.buffer(rect, dist)
+        buffered = mutation.buffer(rect, dist)
         area = buffered.area
         assert area < 4.0
         assert jnp.abs(area - 1.0) < 0.1
@@ -39,14 +39,14 @@ class TestBuffer(TestOpsBase):
         poly = self.create_L_shape()
 
         dist = 0.2
-        buffered = mut_ops.buffer(poly, dist)
+        buffered = mutation.buffer(poly, dist)
         assert buffered.count > 6
         assert buffered.area > poly.area
 
         dist_neg = -0.2
-        eroded = mut_ops.buffer(poly, dist_neg)
+        eroded = mutation.buffer(poly, dist_neg)
         assert eroded.area < poly.area
-        eroded = mut_ops.buffer(poly, dist_neg)
+        eroded = mutation.buffer(poly, dist_neg)
         assert eroded.area < poly.area
         assert not buffered.self_intersect
         assert not eroded.self_intersect
@@ -54,7 +54,7 @@ class TestBuffer(TestOpsBase):
     def test_buffer_circle(self):
         c = geometry.Circle(0, 0, 1, num_edges=32)
         dist = 0.5
-        buffered = mut_ops.buffer(c, dist)
+        buffered = mutation.buffer(c, dist)
         expected_area = jnp.pi * (1.5**2)
         area = buffered.area
         assert jnp.abs(area - expected_area) < 0.2
@@ -63,7 +63,7 @@ class TestBuffer(TestOpsBase):
     def test_large_negative_buffer(self):
         rect = geometry.Rectangle(-1, -1, 2, 2)
         dist = -2.0
-        buffered = mut_ops.buffer(rect, dist)
+        buffered = mutation.buffer(rect, dist)
         area = buffered.area
         # With topo/inversion check, this should now return Empty (area 0) or negligible artifacts.
         assert jnp.abs(area) < 1e-6
@@ -77,7 +77,7 @@ class TestBuffer(TestOpsBase):
         )
         polygon = geometry.Polygon(vertices=vertices, count=6)
         dist = -0.1
-        buffered = mut_ops.buffer(polygon, dist)
+        buffered = mutation.buffer(polygon, dist)
 
         assert buffered.area > 0
         assert jnp.isfinite(buffered.area)
@@ -94,7 +94,7 @@ class TestBuffer(TestOpsBase):
         )
         polygon = geometry.Polygon(vertices=vertices, count=6)
         dist = -0.3
-        buffered = mut_ops.buffer(polygon, dist)
+        buffered = mutation.buffer(polygon, dist)
 
         assert buffered.area > 0.3
         assert jnp.isfinite(buffered.area)
@@ -112,7 +112,7 @@ class TestBuffer(TestOpsBase):
         )
         polygon = geometry.Polygon(vertices=vertices, count=6)
         dist = 0.02
-        buffered = mut_ops.buffer(polygon, dist)
+        buffered = mutation.buffer(polygon, dist)
 
         assert buffered.area > 0.5
         assert jnp.abs(buffered.area - 0.57) < 0.1
@@ -137,7 +137,7 @@ class TestBuffer(TestOpsBase):
         )
 
         p1 = geometry.Polygon(vertices=vertices, count=vertices.shape[0])
-        p2 = mut_ops.buffer(p1, 0.2)
+        p2 = mutation.buffer(p1, 0.2)
 
         # Verify the top point [1.0, 1.0] is covered
         is_in = core._is_point_in_polygon(jnp.array([1.0, 1.0]), p2.vertices, p2.count)
@@ -155,7 +155,7 @@ class TestBuffer(TestOpsBase):
 
         # ops.buffer cleans vertices first.
 
-        res = mut_ops.buffer(circle, 0.1, max_vertices=10)
+        res = mutation.buffer(circle, 0.1, max_vertices=10)
 
         # Expect overflow flag to be True
         assert res.overflow
@@ -171,7 +171,7 @@ class TestOffset(TestOpsBase):
     def test_offset_rectangle(self):
         rect = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
         dx, dy = 1.0, 0.5
-        shifted = mut_ops.offset(rect, dx, dy)
+        shifted = mutation.offset(rect, dx, dy)
 
         assert jnp.abs(shifted.area - rect.area) < 1e-5
         # Check center/vertex
@@ -183,7 +183,7 @@ class TestOffset(TestOpsBase):
         rect = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
 
         def loss(d):
-            shifted = mut_ops.offset(rect, d[0], d[1])
+            shifted = mutation.offset(rect, d[0], d[1])
             # Minimize distance to origin of first vertex
             v0 = shifted.vertices[0]
             return jnp.sum(v0**2)

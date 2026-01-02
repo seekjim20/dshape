@@ -2,18 +2,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 import geometry
-import set as dset  # Avoid python 'set' collision? set.py module name might collide.
-
-# Actually 'set' is a built-in. Importing 'set' works if it is in sys.path.
-# BUT it is bad practice. I should perhaps rename the module or import it carefully.
-# In dshape/src, set.py.
-# Python import system prefers local?
-# If I import 'set', I might get built-in type if I am not careful, or shadow it.
-# Ideally I should rename the module to polygon_set or similar.
-# But user requested `set.py`.
-# I will use `from src import set as set_ops` if running from root.
-# pytest sets root.
-from src import set as set_ops
+import set_ops
 
 
 class TestOpsBase:
