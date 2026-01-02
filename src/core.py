@@ -111,6 +111,65 @@ def _is_inside(p, cp1, cp2):
     ) >= 0
 
 
+def _remove_duplicate_segments(segments: ArrayLike, count: int) -> tuple[Array, int]:
+    """Removes duplicate segments from the list.
+
+    Args:
+        segments: (N, 2, 2) array of segments.
+        count: current valid count.
+
+    Returns:
+        (filtered_segments, new_count)
+    """
+    N = segments.shape[0]
+
+    # We want to mask out duplicates.
+    # Keep the first occurrence.
+    # Mask[i] = True if unique.
+
+    # O(N^2) comparison.
+    indices = jnp.arange(N)
+
+    def check_is_duplicate(i):
+        # Check if i is a duplicate of any k < i
+        seg_i = segments[i]
+
+        def check_k(k):
+            seg_k = segments[k]
+            # dist between starts
+            d1 = jnp.linalg.norm(seg_i[0] - seg_k[0])
+            # dist between ends
+            d2 = jnp.linalg.norm(seg_i[1] - seg_k[1])
+
+            is_same = (d1 < 1e-5) & (d2 < 1e-5)
+            # Check if valid
+            is_active = (k < i) & (k < count)
+            return is_same & is_active
+
+        matches = jax.vmap(check_k)(indices)
+        has_duplicate = jnp.any(matches)
+
+        return has_duplicate
+
+    is_dup = jax.vmap(check_is_duplicate)(indices)
+
+    keep = (~is_dup) & (indices < count)
+
+    # Pack
+    out_buf = jnp.zeros_like(segments)
+
+    def pack(state, i):
+        buf, ptr = state
+        should_keep = keep[i]
+        buf = buf.at[ptr].set(jnp.where(should_keep, segments[i], buf[ptr]))
+        ptr = ptr + jnp.where(should_keep, 1, 0)
+        return (buf, ptr), None
+
+    (final_buf, final_count), _ = jax.lax.scan(pack, (out_buf, 0), indices)
+
+    return final_buf, final_count
+
+
 @jax.jit(static_argnames=["max_v"])
 def _stitch_segments(segments: ArrayLike, count: int, max_v: int) -> tuple[Array, int]:
     """Stitches segments into a continuous polygon loop.
@@ -692,6 +751,212 @@ def _get_clipped_segments(
     )
 
     return final_buf, final_count
+
+
+def _clip_segments(
+    segments: ArrayLike,
+    count: int,
+    clip_verts: ArrayLike,
+    clip_count: int,
+    max_out_segments: int,
+    keep_inside: bool = True,
+) -> tuple[Array, int]:
+    """Clips a set of segments against a polygon.
+
+    Args:
+        segments: Input segments (N, 2, 2).
+        count: Number of valid segments.
+        clip_verts: Clip polygon vertices (M, 2).
+        clip_count: Number of valid clip vertices.
+        max_out_segments: Maximum number of output segments.
+        keep_inside: If True, keep parts inside the clip polygon. Else outside.
+
+    Returns:
+        tuple: (output_segments, output_count)
+    """
+    # 1. Expand segments by intersecting with clip edges
+    # We maintain segments in (K, 2, 2) format.
+
+    # To reuse _insert_intersections, we need to adapt it.
+    # _insert_intersections takes (p1, c1, p2, c2, max_v) and outputs vertices.
+    # It assumes p1 is a connected loop.
+    # Our 'segments' are disconnected.
+
+    # We can write a specialized segment-clipper.
+
+    # A segment (A, B) intersected by clip polygon edges might become multiple segments (A, I1), (I1, I2), (I2, B).
+    # Then we filter them based on midpoint.
+
+    # Step 1: Find intersections of EACH segment with ALL clip edges.
+    # Collect all points (start, end, intersections) on the segment line.
+    # Sort them by distance from start.
+    # Form sub-segments.
+
+    # Implementation details:
+    # Iterate segments. For each segment:
+    #   Find intersections with clip_verts.
+    #   Sort intersections.
+    #   Create sub-segments: (A, I1), (I1, I2)... (Im, B).
+    #   Check midpoint of each sub-segment.
+    #   Write valid ones to output buffer.
+
+    out_buf = jnp.zeros((max_out_segments, 2, 2))
+    out_ptr = 0
+
+    def process_segment(state, i):
+        buf, ptr = state
+
+        # Current segment
+        seg = segments[i]
+        p_start = seg[0]
+        p_end = seg[1]
+
+        is_valid_seg = i < count
+
+        # Vector
+        v_seg = p_end - p_start
+        len_seg = jnp.linalg.norm(v_seg)
+
+        # Find intersections with clip edges
+        def get_intersection(j):
+            c_idx1 = j
+            c_idx2 = jnp.where(j + 1 == clip_count, 0, j + 1)
+            cp1 = clip_verts[c_idx1]
+            cp2 = clip_verts[c_idx2]
+
+            p_int = _line_intersection(p_start, p_end, cp1, cp2)
+
+            # Check on both segments
+            def on_seg_strict(p, a, b):
+                d = jnp.linalg.norm(a - b)
+                d1 = jnp.linalg.norm(a - p)
+                d2 = jnp.linalg.norm(p - b)
+                return jnp.abs(d1 + d2 - d) < 1e-6
+
+            valid = on_seg_strict(p_int, p_start, p_end) & on_seg_strict(
+                p_int, cp1, cp2
+            )
+            valid = valid & (j < clip_count)
+
+            dist = jnp.linalg.norm(p_int - p_start)
+            return p_int, valid, dist
+
+        # Scan clip edges (limit 100)
+        scan_limit = 100
+        ints, valids, dists = jax.vmap(get_intersection)(jnp.arange(scan_limit))
+
+        # Add start (dist 0) and end (dist len_seg) to the list of points
+        # to form simple intervals.
+
+        # We need to sort points: Start, Int1, Int2... End.
+        # Let's verify we have capacity.
+        # Max intersections?
+
+        # Pack candidates: Start, End, Inte...
+        # Candidates: (MAX_INT + 2)
+        MAX_INT = 10
+
+        cand_points = jnp.zeros((MAX_INT + 2, 2))
+        cand_dists = jnp.zeros((MAX_INT + 2))
+        cand_valids = jnp.zeros((MAX_INT + 2), dtype=bool)
+
+        # Set Start
+        cand_points = cand_points.at[0].set(p_start)
+        cand_dists = cand_dists.at[0].set(0.0)
+        cand_valids = cand_valids.at[0].set(True)
+
+        # Set End
+        cand_points = cand_points.at[1].set(p_end)
+        cand_dists = cand_dists.at[1].set(len_seg)
+        cand_valids = cand_valids.at[1].set(True)
+
+        # Fill intersections
+        # Sort indices of intersections by distance
+        dists_masked = jnp.where(valids, dists, 1e9)
+        perm = jnp.argsort(dists_masked)
+
+        def fill_int(k):
+            idx = perm[k]
+            return ints[idx], valids[idx], dists[idx]
+
+        # Take top MAX_INT intersections
+        v_fill = jax.vmap(fill_int)(jnp.arange(MAX_INT))
+
+        cand_points = cand_points.at[2:].set(v_fill[0])
+        cand_valids = cand_valids.at[2:].set(v_fill[1])
+        cand_dists = cand_dists.at[2:].set(v_fill[2])
+
+        # Now sort ALL candidates by distance
+        # Mask invalids to huge distance
+        sort_dists = jnp.where(cand_valids, cand_dists, 1e9)
+        final_perm = jnp.argsort(sort_dists)
+
+        sorted_points = cand_points[final_perm]
+        sorted_valids = cand_valids[final_perm]
+
+        # Create sub-segments
+        # (p[k], p[k+1])
+        # Valid if valid[k] and valid[k+1] and distance < huge
+
+        # Capacity of sub-segments: MAX_INT + 1
+
+        def check_subseg(k):
+            # sub-segment from k to k+1
+            sp1 = sorted_points[k]
+            sp2 = sorted_points[k + 1]
+
+            is_real = sorted_valids[k] & sorted_valids[k + 1] & (k < MAX_INT + 1)
+
+            # Additional check: sort_dists[k+1] should be < 1e8
+            is_real = is_real & (sort_dists[k + 1] < 1e8)
+
+            # Check length > tiny
+            slen = jnp.linalg.norm(sp2 - sp1)
+            is_real = is_real & (slen > 1e-6)
+
+            mid = (sp1 + sp2) * 0.5
+            vec = sp2 - sp1
+            length = jnp.linalg.norm(vec)
+            length = jnp.where(length < 1e-9, 1.0, length)
+            # Outward normal (y, -x)
+            normal = jnp.array([vec[1], -vec[0]]) / length
+
+            test_p = mid + normal * 1e-5
+
+            # Containment check
+            # For robustness, use probe
+            # But line is exactly on boundary? No, crossing only at endpoints.
+            # Midpoint is strictly inside or outside usually.
+
+            # Using 1e-6 check to match recent fixes
+            is_in = _is_point_in_polygon(test_p, clip_verts, clip_count)
+            should_keep = is_in == keep_inside
+
+            final_valid = is_real & should_keep & is_valid_seg
+
+            return jnp.stack([sp1, sp2]), final_valid
+
+        sub_segs, sub_valids = jax.vmap(check_subseg)(jnp.arange(MAX_INT + 1))
+
+        # Write to buffer
+        def write_sub(w_state, k):
+            b, p = w_state
+            ss = sub_segs[k]
+            sv = sub_valids[k]
+
+            b = b.at[p].set(jnp.where(sv, ss, b[p]))
+            p = p + jnp.where(sv, 1, 0)
+            return (b, p), None
+
+        (buf, ptr), _ = jax.lax.scan(write_sub, (buf, ptr), jnp.arange(MAX_INT + 1))
+
+        return (buf, ptr), None
+
+    (final_buf, final_ptr), _ = jax.lax.scan(
+        process_segment, (out_buf, out_ptr), jnp.arange(segments.shape[0])
+    )
+
+    return final_buf, final_ptr
 
 
 def _check_edge_inversion_mask(input_verts, count, chunks, chunk_counts):

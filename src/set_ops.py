@@ -51,20 +51,17 @@ def intersection(
     return geometry.Polygon(vertices=vertices, count=safe_count, overflow=overflow)
 
 
+from typing import Sequence
+
+
 @jax.jit(static_argnames=["max_vertices"])
 def union(
-    polygon1: geometry.Polygon, polygon2: geometry.Polygon, max_vertices: int = 256
+    polygons: Sequence[geometry.Polygon], max_vertices: int = 256
 ) -> geometry.Polygon:
-    """Computes the union of two polygons (P1 U P2).
-
-    Approximation:
-    Since JAX requires static shapes and strict topology is hard to maintain, we use a
-    Clipping-based approach to stitch the outer boundary segments.
-    Result correctness relies on the assumption that the union forms a single connected loop.
+    """Computes the union of multiple polygons.
 
     Args:
-        polygon1: First polygon.
-        polygon2: Second polygon.
+        polygons: List or sequence of polygons.
         max_vertices: Size of the output buffer.
 
     Returns:
@@ -76,56 +73,135 @@ def union(
         and retry with a larger `max_vertices` if necessary.
     """
     # Robust implementation using segment stitching
-    # 1. Collect segments of A outside B
-    # 2. Collect segments of B outside A
-    # 3. Stitch
+    # Logic:
+    # For each polygon P_i in the list:
+    #   Segments = edges of P_i
+    #   For each polygon P_j (j != i):
+    #     Segments = clip_segments(Segments, P_j, keep_inside=False)
+    #   Add Segments to collection.
+    # Stitch collection.
 
-    # Use max_vertices for capacity estimation
-    seg1, count1 = core._get_clipped_segments(
-        polygon1.vertices,
-        polygon1.count,
-        polygon2.vertices,
-        polygon2.count,
-        max_vertices,
-        keep_inside=False,
-    )
+    num_polys = len(polygons)
+    if num_polys == 0:
+        return geometry.Polygon(vertices=jnp.zeros((0, 2)), count=0)
 
-    seg2, count2 = core._get_clipped_segments(
-        polygon2.vertices,
-        polygon2.count,
-        polygon1.vertices,
-        polygon1.count,
-        max_vertices,
-        keep_inside=False,
-    )
+    # We maintain a large buffer for all resulting segments before stitching.
+    # Capacity estimation: num_polys * max_vertices * 2?
+    # If list is long, this might be huge.
+    # Assuming small list for now (e.g. 5).
+    # Ideally should be dynamic or static bounded.
 
-    # Pad to safe size (using 2x for safety as in _get_clipped_segments)
-    capacity = max_vertices * 2
+    # Let's cap total segments at max_vertices * 4 for now to keep JIT sanity
+    TOTAL_CAPACITY = max_vertices * 4
 
-    # We need to concatenate seg1 (valid 0..count1) and seg2 (valid 0..count2)
-    # Using jnp.concatenate on raw seg1/seg2 is WRONG because seg1 has padding at end which would separate valid seg1 from valid seg2.
-    # We use dynamic_update_slice to pack them.
+    all_segments = jnp.zeros((TOTAL_CAPACITY, 2, 2))
+    all_count = 0
+    all_overflow = False
 
-    all_segments = jnp.zeros((capacity * 2, 2, 2))
-    all_segments = jax.lax.dynamic_update_slice(all_segments, seg1, (0, 0, 0))
-    all_segments = jax.lax.dynamic_update_slice(all_segments, seg2, (count1, 0, 0))
+    # Helper to extract edges from a polygon
+    def extract_edges(poly):
+        N = poly.vertices.shape[0]
+        c = poly.count
 
-    all_count = count1 + count2
+        # We can reuse _insert_intersections if we treat P2 as empty?
+        # Or just manually expand.
+        # Let's write a simple expansion.
+
+        idxs = jnp.arange(max_vertices)  # Assume poly vertices <= max_vertices
+
+        def get_seg(i):
+            idx1 = i
+            idx2 = jnp.where(i + 1 == c, 0, i + 1)
+            p1 = poly.vertices[idx1]
+            p2 = poly.vertices[idx2]
+            valid = i < c
+            return jnp.stack([p1, p2]), valid
+
+        segs, valids = jax.vmap(get_seg)(idxs)
+
+        # Pack
+        # We need a fixed size buffer for segments.
+        # Let's use max_vertices capacity.
+        return segs, c
+
+    # Iterate over each polygon as the "Subject"
+    for i in range(num_polys):
+        subject = polygons[i]
+
+        # Get initial segments
+        # Note: We assume subject has <= max_vertices edges.
+        current_segments, current_count = extract_edges(subject)
+
+        # Iterate over other polygons to clip against
+        for j in range(num_polys):
+            if i == j:
+                continue
+
+            clipper = polygons[j]
+
+            # Clip current_segments against clipper
+            # Keep OUTSIDE parts
+            # Capacity for intermediate clip: max_vertices * 2 (standard heuristic)
+            current_segments, current_count = core._clip_segments(
+                current_segments,
+                current_count,
+                clipper.vertices,
+                clipper.count,
+                max_vertices * 2,
+                keep_inside=False,
+            )
+
+        # Add to main accumulator
+        # We cannot use dynamic slice on source with dynamic count.
+        # We use a scan loop to copy valid segments.
+
+        # We want to copy current_segments[0..current_count] to all_segments[all_count..]
+
+        def copy_step(state, k):
+            buf, base_ptr = state
+            # segment to copy
+            seg = current_segments[k]
+            # conditions
+            src_valid = k < current_count
+            dst_idx = base_ptr + k
+            dst_valid = dst_idx < TOTAL_CAPACITY
+
+            should_copy = src_valid & dst_valid
+
+            buf = buf.at[dst_idx].set(jnp.where(should_copy, seg, buf[dst_idx]))
+            return (buf, base_ptr), None
+
+        # Scan over all potential segments in current_segments
+        # shape is (max_vertices * 2, 2, 2)
+        src_len = current_segments.shape[0]
+        (all_segments, _), _ = jax.lax.scan(
+            copy_step, (all_segments, all_count), jnp.arange(src_len)
+        )
+
+        # Clamp current_count to fit
+        remaining = TOTAL_CAPACITY - all_count
+        to_add = jnp.minimum(current_count, remaining)
+
+        # If current_count > remaining -> local overflow
+        local_ovf = current_count > remaining
+        all_overflow = all_overflow | local_ovf
+
+        all_count = all_count + to_add
+        all_overflow = all_overflow | subject.overflow  # Propagate input overflow
+
+    # Remove duplicates (coincident edges from overlapping boundaries)
+    all_segments, all_count = core._remove_duplicate_segments(all_segments, all_count)
 
     # Stitch
-    vertices, count = core._stitch_segments(all_segments, all_count, max_vertices)
+    vertices, final_count = core._stitch_segments(all_segments, all_count, max_vertices)
 
-    # Input overflow logic
-    # _get_clipped_segments uses max_vertices for capacity.
-    # If inputs are huge, it might truncate.
-    input_ovf = (polygon1.count > max_vertices) | (polygon2.count > max_vertices)
-    res_ovf = count >= max_vertices
-    overflow = input_ovf | res_ovf
+    res_ovf = final_count >= max_vertices
+    overflow = all_overflow | res_ovf
 
-    # Clean the output to remove duplicates
-    vertices, count = core._clean_vertices(vertices, count)
+    # Clean
+    vertices, final_count = core._clean_vertices(vertices, final_count)
 
-    safe_count = jnp.minimum(count, max_vertices)
+    safe_count = jnp.minimum(final_count, max_vertices)
 
     return geometry.Polygon(vertices=vertices, count=safe_count, overflow=overflow)
 

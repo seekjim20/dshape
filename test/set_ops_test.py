@@ -75,7 +75,7 @@ class TestUnion(TestOpsBase):
         p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
         p2 = geometry.Rectangle(1.0, 0.1, 2.0, 2.0)
 
-        union_poly = set_ops.union(p1, p2)
+        union_poly = set_ops.union([p1, p2])
         area = union_poly.area
         assert jnp.abs(area - 6.1) < 1e-4
 
@@ -83,7 +83,7 @@ class TestUnion(TestOpsBase):
         p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
         p2 = geometry.Rectangle(1.5, 1.5, 2.0, 2.0)
 
-        union_poly = set_ops.union(p1, p2)
+        union_poly = set_ops.union([p1, p2])
         area = union_poly.area
         expected_area = 7.75
         assert jnp.abs(area - expected_area) < 1e-3
@@ -92,7 +92,7 @@ class TestUnion(TestOpsBase):
         p1 = self.create_L_shape()
         p2 = geometry.Rectangle(1.0, 1.0, 1.0, 1.0)
 
-        union_poly = set_ops.union(p1, p2)
+        union_poly = set_ops.union([p1, p2])
         area = union_poly.area
         assert jnp.abs(area - 4.0) < 1e-3
 
@@ -101,7 +101,7 @@ class TestUnion(TestOpsBase):
         p2 = geometry.Polygon(jnp.array([[1, 1], [3, 1], [3, 3], [1, 3]]), 4)
 
         # Union has 8 vertices roughly.
-        res = set_ops.union(p1, p2, max_vertices=3)
+        res = set_ops.union([p1, p2], max_vertices=3)
 
         assert res.overflow
         assert res.count == 3
@@ -121,11 +121,30 @@ class TestUnion(TestOpsBase):
         # Actually offset logic expands if edges are sharp, but for buffer result (smooth/arcs), it shifts/expands.
         p3 = mutation.offset(p2, 0.05, 0.0)
 
-        p4 = set_ops.union(p2, p3)
+        p4 = set_ops.union([p2, p3])
 
         # Expected area ~ 0.04452
         assert jnp.abs(p4.area - 0.04452) < 1e-4
         assert not p4.overflow
+
+    def test_union_three_polys(self):
+        # Union of 3 squares in a row
+        p1 = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        p2 = geometry.Rectangle(0.5, 0.0, 1.0, 1.0)  # Overlaps p1
+        p3 = geometry.Rectangle(1.0, 0.0, 1.0, 1.0)  # Overlaps p2 (touches p1 edge)
+
+        # Expected: Rectangle(0, 0, 2, 1) basically?
+        # 0.5 overlap.
+        # min x=0, max x=2. y=0..1.
+        # Area should be roughly 2.0?
+        # p1 area 1. p2 area 1. overlap 0.5. Union = 1.5.
+        # p3 area 1. overlap with p1Up2 (0.5..1.5). p3 is (1..2). Overlap (1..1.5) -> 0.5.
+        # Total area = 1.5 + 1 - 0.5 = 2.0.
+
+        res = set_ops.union([p1, p2, p3])
+        assert jnp.abs(res.area - 2.0) < 1e-3
+        assert not res.overflow
+
 
 
 class TestDifference(TestOpsBase):
