@@ -12,6 +12,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+# type hints
+from jax import Array
+from jax.typing import ArrayLike
+
+
 @jax.tree_util.register_pytree_node_class
 @dataclasses.dataclass
 class Polygon:
@@ -23,8 +28,8 @@ class Polygon:
         overflow: Boolean indicating if the logical vertex count exceeded the buffer size.
     """
 
-    vertices: jnp.ndarray
-    count: jnp.ndarray | int
+    vertices: ArrayLike
+    count: ArrayLike
     overflow: bool = False
 
     def tree_flatten(self):
@@ -42,7 +47,7 @@ class Polygon:
 
     @property
     @jax.jit
-    def area(self) -> jnp.ndarray:
+    def area(self) -> Array:
         """Computes area of the polygon.
 
         Assumptions:
@@ -153,7 +158,7 @@ class Circle(Polygon):
         super().__init__(vertices=vertices, count=num_edges)
 
 
-def _has_self_intersection(vertices: jnp.ndarray, count: int) -> bool:
+def _has_self_intersection(vertices: ArrayLike, count: ArrayLike) -> bool:
     """Check if a polygon self-intersects.
 
     O(N^2) check.

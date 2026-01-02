@@ -65,6 +65,20 @@ class TestIntersection(TestOpsBase):
         jit_fn = jax.jit(intersection_area_fn)
         jit_fn(zero_offset)
 
+    def test_intersection_overflow(self):
+        # Create two overlapping squares
+        p1 = geometry.Polygon(jnp.array([[0, 0], [2, 0], [2, 2], [0, 2]]), 4)
+        p2 = geometry.Polygon(jnp.array([[1, 1], [3, 1], [3, 3], [1, 3]]), 4)
+
+        # Intersection is a square (4 vertices).
+        # Force max_vertices=2
+
+        res = set_ops.intersection(p1, p2, max_vertices=2)
+
+        assert res.overflow
+        # Count can be low if clamping removed intersecting geometry
+        assert res.count <= 2
+
 
 class TestUnion(TestOpsBase):
     def test_union_convex_case(self):
@@ -91,6 +105,16 @@ class TestUnion(TestOpsBase):
         union_poly = set_ops.union(p1, p2)
         area = union_poly.area
         assert jnp.abs(area - 4.0) < 1e-3
+
+    def test_union_overflow(self):
+        p1 = geometry.Polygon(jnp.array([[0, 0], [2, 0], [2, 2], [0, 2]]), 4)
+        p2 = geometry.Polygon(jnp.array([[1, 1], [3, 1], [3, 3], [1, 3]]), 4)
+
+        # Union has 8 vertices roughly.
+        res = set_ops.union(p1, p2, max_vertices=3)
+
+        assert res.overflow
+        assert res.count == 3
 
 
 class TestDifference(TestOpsBase):

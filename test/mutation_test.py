@@ -144,6 +144,28 @@ class TestBuffer(TestOpsBase):
         assert is_in
         assert not p2.self_intersect
 
+    def test_buffer_overflow(self):
+        # Create a circle with many edges
+        circle = geometry.Circle(0, 0, 1.0, num_edges=50)  # 50 vertices
+
+        # Buffer it with a VERY small max_vertices to force overflow
+        # Buffer usually increases vertex count significantly (especially with round joins)
+        # Even with miter, it might expand.
+        # Let's use max_vertices=10 (smaller than input count 50)
+
+        # ops.buffer cleans vertices first.
+
+        res = mut_ops.buffer(circle, 0.1, max_vertices=10)
+
+        # Expect overflow flag to be True
+        assert res.overflow
+
+        # Expect count to be clamped to max_vertices
+        assert res.count == 10
+
+        # Result vertices shape
+        assert res.vertices.shape == (10, 2)
+
 
 class TestOffset(TestOpsBase):
     def test_offset_rectangle(self):

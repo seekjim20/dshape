@@ -47,7 +47,7 @@ def buffer(
     return geometry.Polygon(vertices=vertices, count=safe_count, overflow=overflow)
 
 
-def offset(polygon: geometry.Polygon, dx: float, dy: float) -> geometry.Polygon:
+def offset(polygon: geometry.Polygon, dx: ArrayLike, dy: ArrayLike) -> geometry.Polygon:
     """Translates the polygon by (dx, dy).
 
     Args:
