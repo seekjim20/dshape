@@ -2,14 +2,14 @@
 
 import jax
 import jax.numpy as jnp
-from geometry import Polygon
-from core import _intersection, _clean_vertices, _get_clipped_segments, _stitch_segments
+import geometry
+import core
 
 
 @jax.jit(static_argnames=["max_vertices"])
 def intersection(
-    polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256
-) -> Polygon:
+    polygon1: geometry.Polygon, polygon2: geometry.Polygon, max_vertices: int = 256
+) -> geometry.Polygon:
     """Computes the intersection of two polygons using the Sutherland-Hodgman algorithm.
 
     Assumptions:
@@ -29,7 +29,9 @@ def intersection(
         and the `overflow` flag will be set to `True`. Check `result.overflow`
         and retry with a larger `max_vertices` if necessary.
     """
-    vertices, count = _intersection(polygon1.vertices, polygon2.vertices, max_vertices)
+    vertices, count = core._intersection(
+        polygon1.vertices, polygon2.vertices, max_vertices
+    )
 
     # Check for overflow:
     # 1. Output overflow (count reached limit)
@@ -42,15 +44,17 @@ def intersection(
     overflow = input_ovf | res_ovf
 
     # Clean the output to remove duplicates
-    vertices, count = _clean_vertices(vertices, count)
+    vertices, count = core._clean_vertices(vertices, count)
 
     safe_count = jnp.minimum(count, max_vertices)
 
-    return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
+    return geometry.Polygon(vertices=vertices, count=safe_count, overflow=overflow)
 
 
 @jax.jit(static_argnames=["max_vertices"])
-def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256) -> Polygon:
+def union(
+    polygon1: geometry.Polygon, polygon2: geometry.Polygon, max_vertices: int = 256
+) -> geometry.Polygon:
     """Computes the union of two polygons (P1 U P2).
 
     Approximation:
@@ -77,7 +81,7 @@ def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256) -> Poly
     # 3. Stitch
 
     # Use max_vertices for capacity estimation
-    seg1, count1 = _get_clipped_segments(
+    seg1, count1 = core._get_clipped_segments(
         polygon1.vertices,
         polygon1.count,
         polygon2.vertices,
@@ -86,7 +90,7 @@ def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256) -> Poly
         keep_inside=False,
     )
 
-    seg2, count2 = _get_clipped_segments(
+    seg2, count2 = core._get_clipped_segments(
         polygon2.vertices,
         polygon2.count,
         polygon1.vertices,
@@ -109,7 +113,7 @@ def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256) -> Poly
     all_count = count1 + count2
 
     # Stitch
-    vertices, count = _stitch_segments(all_segments, all_count, max_vertices)
+    vertices, count = core._stitch_segments(all_segments, all_count, max_vertices)
 
     # Input overflow logic
     # _get_clipped_segments uses max_vertices for capacity.
@@ -119,17 +123,17 @@ def union(polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256) -> Poly
     overflow = input_ovf | res_ovf
 
     # Clean the output to remove duplicates
-    vertices, count = _clean_vertices(vertices, count)
+    vertices, count = core._clean_vertices(vertices, count)
 
     safe_count = jnp.minimum(count, max_vertices)
 
-    return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
+    return geometry.Polygon(vertices=vertices, count=safe_count, overflow=overflow)
 
 
 @jax.jit(static_argnames=["max_vertices"])
 def difference(
-    polygon1: Polygon, polygon2: Polygon, max_vertices: int = 256
-) -> Polygon:
+    polygon1: geometry.Polygon, polygon2: geometry.Polygon, max_vertices: int = 256
+) -> geometry.Polygon:
     """Computes the difference P1 - P2.
 
     Args:
@@ -149,7 +153,7 @@ def difference(
     # Why P2 inside P1 reversed? Imagine P1 is big square, P2 is hole.
     # Boundary follows P1, then jumps to P2 hole (reversed).
 
-    seg1, count1 = _get_clipped_segments(
+    seg1, count1 = core._get_clipped_segments(
         polygon1.vertices,
         polygon1.count,
         polygon2.vertices,
@@ -158,7 +162,7 @@ def difference(
         keep_inside=False,
     )
 
-    seg2, count2 = _get_clipped_segments(
+    seg2, count2 = core._get_clipped_segments(
         polygon2.vertices,
         polygon2.count,
         polygon1.vertices,
@@ -179,15 +183,15 @@ def difference(
 
     all_count = count1 + count2
 
-    vertices, count = _stitch_segments(all_segments, all_count, max_vertices)
+    vertices, count = core._stitch_segments(all_segments, all_count, max_vertices)
 
     input_ovf = (polygon1.count > max_vertices) | (polygon2.count > max_vertices)
     res_ovf = count >= max_vertices
     overflow = input_ovf | res_ovf
 
     # Clean the output to remove duplicates
-    vertices, count = _clean_vertices(vertices, count)
+    vertices, count = core._clean_vertices(vertices, count)
 
     safe_count = jnp.minimum(count, max_vertices)
 
-    return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
+    return geometry.Polygon(vertices=vertices, count=safe_count, overflow=overflow)

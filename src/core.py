@@ -2,7 +2,11 @@
 
 import jax
 import jax.numpy as jnp
-from geometry import Polygon
+import geometry
+
+# type hints
+from jax import Array
+from jax.typing import ArrayLike
 
 
 def _clean_vertices(vertices, count):
@@ -108,9 +112,7 @@ def _is_inside(p, cp1, cp2):
 
 
 @jax.jit(static_argnames=["max_v"])
-def _stitch_segments(
-    segments: jnp.ndarray, count: int, max_v: int
-) -> tuple[jnp.ndarray, int]:
+def _stitch_segments(segments: ArrayLike, count: int, max_v: int) -> tuple[Array, int]:
     """Stitches segments into a continuous polygon loop.
 
     This function attempts to form a closed loop from a set of line segments.
@@ -379,8 +381,8 @@ def _stitch_segments(
 
 
 def _intersection(
-    polygon1: jnp.ndarray, polygon2: jnp.ndarray, max_vertices: int
-) -> tuple[jnp.ndarray, int]:
+    polygon1: ArrayLike, polygon2: ArrayLike, max_vertices: int
+) -> tuple[Array, int]:
     """Computes the intersection of two polygons using the Sutherland-Hodgman algorithm.
 
     Assumptions:
@@ -754,13 +756,13 @@ def _check_edge_inversion_mask(input_verts, count, chunks, chunk_counts):
 
 
 def _offset_vertex(
-    p: jnp.ndarray,
-    n1: jnp.ndarray,
-    n2: jnp.ndarray,
+    p: ArrayLike,
+    n1: ArrayLike,
+    n2: ArrayLike,
     is_convex: bool,
-    dist: float,
+    dist: ArrayLike,
     max_pts: int,
-) -> tuple[jnp.ndarray, int]:
+) -> tuple[Array, int]:
     """Generates offset vertices for a corner P with incoming normal n1 and outgoing n2.
 
     Args:
@@ -851,8 +853,8 @@ def _offset_vertex(
 
 
 def _buffer(
-    vertices: jnp.ndarray, count: int, distance: float, max_vertices: int
-) -> tuple[jnp.ndarray, int]:
+    vertices: ArrayLike, count: int, distance: ArrayLike, max_vertices: int
+) -> tuple[Array, int]:
     # 1. Compute Normals
     n = vertices.shape[0]
     indices = jnp.arange(n)

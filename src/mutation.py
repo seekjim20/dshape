@@ -2,12 +2,16 @@
 
 import jax
 import jax.numpy as jnp
-from geometry import Polygon
-from core import _buffer, _clean_vertices
+from jax import Array
+from jax.typing import ArrayLike
+import geometry
+import core
 
 
 @jax.jit(static_argnames=["max_vertices"])
-def buffer(polygon: Polygon, distance: float, max_vertices: int = 256) -> Polygon:
+def buffer(
+    polygon: geometry.Polygon, distance: ArrayLike, max_vertices: int = 256
+) -> geometry.Polygon:
     """Computes the buffer of a polygon.
 
     Args:
@@ -23,7 +27,9 @@ def buffer(polygon: Polygon, distance: float, max_vertices: int = 256) -> Polygo
         and the `overflow` flag will be set to `True`. Check `result.overflow`
         and retry with a larger `max_vertices` if necessary.
     """
-    vertices, count = _buffer(polygon.vertices, polygon.count, distance, max_vertices)
+    vertices, count = core._buffer(
+        polygon.vertices, polygon.count, distance, max_vertices
+    )
 
     # Note: _buffer usually cleans vertices, so checking input count > max_vertices
     # might be too aggressive if cleaning reduces it significantly.
@@ -34,14 +40,14 @@ def buffer(polygon: Polygon, distance: float, max_vertices: int = 256) -> Polygo
     overflow = count >= max_vertices
 
     # Clean the output to remove duplicates
-    vertices, count = _clean_vertices(vertices, count)
+    vertices, count = core._clean_vertices(vertices, count)
 
     safe_count = jnp.minimum(count, max_vertices)
 
-    return Polygon(vertices=vertices, count=safe_count, overflow=overflow)
+    return geometry.Polygon(vertices=vertices, count=safe_count, overflow=overflow)
 
 
-def offset(polygon: Polygon, dx: float, dy: float) -> Polygon:
+def offset(polygon: geometry.Polygon, dx: float, dy: float) -> geometry.Polygon:
     """Translates the polygon by (dx, dy).
 
     Args:
@@ -52,7 +58,7 @@ def offset(polygon: Polygon, dx: float, dy: float) -> Polygon:
     Returns:
         Offset polygon.
     """
-    return Polygon(
+    return geometry.Polygon(
         vertices=polygon.vertices + jnp.array([dx, dy]),
         count=polygon.count,
         overflow=polygon.overflow,
