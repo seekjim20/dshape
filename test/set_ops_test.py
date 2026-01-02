@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 import geometry
+import mutation
 import set_ops
 
 
@@ -104,6 +105,27 @@ class TestUnion(TestOpsBase):
 
         assert res.overflow
         assert res.count == 3
+
+    def test_union_artifact_regression(self):
+        # Regression test for small-scale artifact bug (user reported)
+        # P1 is small triangle near origin
+        p1 = geometry.Polygon(
+            jnp.array([[0.0, 0.0], [0.05, 0.0], [0.0, 0.05]], dtype=jnp.float32), 3
+        )
+
+        # Buffer
+        dist = 0.079268
+        p2 = mutation.buffer(p1, dist)
+
+        # Offset (Shift essentially, as it's offset of buffer)
+        # Actually offset logic expands if edges are sharp, but for buffer result (smooth/arcs), it shifts/expands.
+        p3 = mutation.offset(p2, 0.05, 0.0)
+
+        p4 = set_ops.union(p2, p3)
+
+        # Expected area ~ 0.04452
+        assert jnp.abs(p4.area - 0.04452) < 1e-4
+        assert not p4.overflow
 
 
 class TestDifference(TestOpsBase):

@@ -557,7 +557,7 @@ def _insert_intersections(p1, c1, p2, c2, max_v):
                 d_ab = jnp.linalg.norm(a - b)
                 d_ap = jnp.linalg.norm(a - p)
                 d_pb = jnp.linalg.norm(p - b)
-                return jnp.abs(d_ap + d_pb - d_ab) < 1e-4
+                return jnp.abs(d_ap + d_pb - d_ab) < 1e-6
 
             valid = on_seg(p_int, sp1, sp2) & on_seg(p_int, cp1, cp2)
             valid = valid & (j < c2)
@@ -659,7 +659,7 @@ def _get_clipped_segments(
         normal = jnp.array([vec[1], -vec[0]]) / (length + 1e-9)
 
         # Test point slightly outside
-        test_p = mid + normal * 1e-3
+        test_p = mid + normal * 1e-6
 
         # Check if inside
         is_in = _is_point_in_polygon(test_p, clip_verts, clip_count)
