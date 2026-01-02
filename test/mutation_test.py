@@ -2,7 +2,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 import geometry
-import ops
+from src import mutation as mut_ops
+from src import core  # For _is_point_in_polygon usage in tests
 
 
 class TestOpsBase:
@@ -15,117 +16,11 @@ class TestOpsBase:
         return geometry.Polygon(vertices=vertices, count=6)
 
 
-class TestIntersection(TestOpsBase):
-    def test_intersection_area(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
-        p2 = geometry.Rectangle(1.0, 1.0, 2.0, 2.0)
-
-        inter = ops.intersection(p1, p2)
-        area = inter.area
-        assert jnp.abs(area - 1.0) < 1e-4
-
-    def test_concave_intersection(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 3.0, 3.0)
-        p2 = self.create_L_shape()
-
-        inter = ops.intersection(p1, p2)
-        area = inter.area
-        # Known Limitation: Sutherland-Hodgman clipping requires convex clip polygon.
-        # Since p2 is concave, we expect incorrect area (not 3.0).
-        # We assert it's NOT 3.0 to document this limitation, or just pass.
-        assert jnp.abs(area - 3.0) > 1e-4
-
-    def test_gradients(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
-
-        def intersection_area_fn(offset):
-            p2 = geometry.Rectangle(1.0 + offset[0], 1.0 + offset[1], 2.0, 2.0)
-            inter = ops.intersection(p1, p2)
-            return inter.area
-
-        grad_fn = jax.grad(intersection_area_fn)
-        zero_offset = jnp.array([0.0, 0.0])
-        grads = grad_fn(zero_offset)
-
-        expected_grad = jnp.array([-1.0, -1.0])
-        assert jnp.allclose(grads, expected_grad, atol=1e-4)
-
-        # Test JIT
-        jit_fn = jax.jit(intersection_area_fn)
-        jit_fn(zero_offset)
-
-
-class TestUnion(TestOpsBase):
-    def test_union_convex_case(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
-        # Shift P2 slightly to avoid perfectly coincident edges (numeric robustness)
-        p2 = geometry.Rectangle(1.0, 0.1, 2.0, 2.0)
-
-        # P1: 4.0. P2: 4.0.
-        # Intersection: x[1,2], y[0.1, 2]. w=1, h=1.9. Area=1.9.
-        # Union = 8.0 - 1.9 = 6.1.
-
-        union_poly = ops.union(p1, p2)
-        area = union_poly.area
-        assert jnp.abs(area - 6.1) < 1e-4
-
-    def test_union_non_convex_case(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
-        p2 = geometry.Rectangle(1.5, 1.5, 2.0, 2.0)
-
-        union_poly = ops.union(p1, p2)
-        area = union_poly.area
-        expected_area = 7.75
-        assert jnp.abs(area - expected_area) < 1e-3
-
-    def test_concave_union(self):
-        p1 = self.create_L_shape()
-        p2 = geometry.Rectangle(1.0, 1.0, 1.0, 1.0)
-
-        union_poly = ops.union(p1, p2)
-        area = union_poly.area
-        assert jnp.abs(area - 4.0) < 1e-3
-
-
-class TestDifference(TestOpsBase):
-    def test_difference_overlap(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
-        p2 = geometry.Rectangle(1.0, 1.0, 2.0, 2.0)
-
-        diff_poly = ops.difference(p1, p2)
-        area = diff_poly.area
-        assert jnp.abs(area - 3.0) < 1e-3
-
-    def test_difference_produces_concave(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 3.0, 1.0)
-        p2 = geometry.Rectangle(1.0, 0.0, 1.0, 0.5)
-
-        diff_poly = ops.difference(p1, p2)
-        area = diff_poly.area
-        assert jnp.abs(area - 2.5) < 1e-3
-
-    def test_hole_creation(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 3.0, 3.0)
-        p2 = geometry.Rectangle(1.0, 1.0, 1.0, 1.0)
-
-        diff_poly = ops.difference(p1, p2)
-        area = diff_poly.area
-        assert jnp.abs(area - 8.0) < 1e-3
-
-    def test_p1_inside_p2(self):
-        p1 = geometry.Rectangle(1.0, 1.0, 1.0, 1.0)
-        p2 = geometry.Rectangle(0.0, 0.0, 3.0, 3.0)
-
-        diff_poly = ops.difference(p1, p2)
-        area = diff_poly.area
-        assert jnp.abs(area - 0.0) < 1e-4
-
-
 class TestBuffer(TestOpsBase):
     def test_buffer_square_positive(self):
         rect = geometry.Rectangle(-1, -1, 2, 2)
         dist = 0.5
-        buffered = ops.buffer(rect, dist)
+        buffered = mut_ops.buffer(rect, dist)
         area = buffered.area
         assert area > 4.0
         assert jnp.abs(area - 8.785) < 0.2
@@ -134,7 +29,7 @@ class TestBuffer(TestOpsBase):
     def test_buffer_square_negative(self):
         rect = geometry.Rectangle(-1, -1, 2, 2)
         dist = -0.5
-        buffered = ops.buffer(rect, dist)
+        buffered = mut_ops.buffer(rect, dist)
         area = buffered.area
         assert area < 4.0
         assert jnp.abs(area - 1.0) < 0.1
@@ -144,14 +39,14 @@ class TestBuffer(TestOpsBase):
         poly = self.create_L_shape()
 
         dist = 0.2
-        buffered = ops.buffer(poly, dist)
+        buffered = mut_ops.buffer(poly, dist)
         assert buffered.count > 6
         assert buffered.area > poly.area
 
         dist_neg = -0.2
-        eroded = ops.buffer(poly, dist_neg)
+        eroded = mut_ops.buffer(poly, dist_neg)
         assert eroded.area < poly.area
-        eroded = ops.buffer(poly, dist_neg)
+        eroded = mut_ops.buffer(poly, dist_neg)
         assert eroded.area < poly.area
         assert not buffered.self_intersect
         assert not eroded.self_intersect
@@ -159,7 +54,7 @@ class TestBuffer(TestOpsBase):
     def test_buffer_circle(self):
         c = geometry.Circle(0, 0, 1, num_edges=32)
         dist = 0.5
-        buffered = ops.buffer(c, dist)
+        buffered = mut_ops.buffer(c, dist)
         expected_area = jnp.pi * (1.5**2)
         area = buffered.area
         assert jnp.abs(area - expected_area) < 0.2
@@ -168,7 +63,7 @@ class TestBuffer(TestOpsBase):
     def test_large_negative_buffer(self):
         rect = geometry.Rectangle(-1, -1, 2, 2)
         dist = -2.0
-        buffered = ops.buffer(rect, dist)
+        buffered = mut_ops.buffer(rect, dist)
         area = buffered.area
         # With topo/inversion check, this should now return Empty (area 0) or negligible artifacts.
         assert jnp.abs(area) < 1e-6
@@ -182,7 +77,7 @@ class TestBuffer(TestOpsBase):
         )
         polygon = geometry.Polygon(vertices=vertices, count=6)
         dist = -0.1
-        buffered = ops.buffer(polygon, dist)
+        buffered = mut_ops.buffer(polygon, dist)
 
         assert buffered.area > 0
         assert jnp.isfinite(buffered.area)
@@ -199,7 +94,7 @@ class TestBuffer(TestOpsBase):
         )
         polygon = geometry.Polygon(vertices=vertices, count=6)
         dist = -0.3
-        buffered = ops.buffer(polygon, dist)
+        buffered = mut_ops.buffer(polygon, dist)
 
         assert buffered.area > 0.3
         assert jnp.isfinite(buffered.area)
@@ -217,18 +112,44 @@ class TestBuffer(TestOpsBase):
         )
         polygon = geometry.Polygon(vertices=vertices, count=6)
         dist = 0.02
-        buffered = ops.buffer(polygon, dist)
+        buffered = mut_ops.buffer(polygon, dist)
 
         assert buffered.area > 0.5
         assert jnp.abs(buffered.area - 0.57) < 0.1
         assert not buffered.self_intersect
+
+    def test_buffer_connected_triangles(self):
+        # Regression test for "Keep Loop vs Keep Head" heuristic failure.
+        # Two connected triangles (bowtie/hourglass) connected at [1,0].
+        # Heuristic must correctly choose the main body (Area) over the high-vertex connection sausage.
+        vertices = jnp.array(
+            [
+                [2.0, 0.0],
+                [1.0, 1.0],
+                [1.0, 0.0],
+                [2.0, 0.0],
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.0, 0.0],
+                [1.0, 0.0],
+            ],
+            dtype=jnp.float32,
+        )
+
+        p1 = geometry.Polygon(vertices=vertices, count=vertices.shape[0])
+        p2 = mut_ops.buffer(p1, 0.2)
+
+        # Verify the top point [1.0, 1.0] is covered
+        is_in = core._is_point_in_polygon(jnp.array([1.0, 1.0]), p2.vertices, p2.count)
+        assert is_in
+        assert not p2.self_intersect
 
 
 class TestOffset(TestOpsBase):
     def test_offset_rectangle(self):
         rect = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
         dx, dy = 1.0, 0.5
-        shifted = ops.offset(rect, dx, dy)
+        shifted = mut_ops.offset(rect, dx, dy)
 
         assert jnp.abs(shifted.area - rect.area) < 1e-5
         # Check center/vertex
@@ -240,7 +161,7 @@ class TestOffset(TestOpsBase):
         rect = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
 
         def loss(d):
-            shifted = ops.offset(rect, d[0], d[1])
+            shifted = mut_ops.offset(rect, d[0], d[1])
             # Minimize distance to origin of first vertex
             v0 = shifted.vertices[0]
             return jnp.sum(v0**2)

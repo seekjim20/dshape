@@ -1,4 +1,5 @@
 from .geometry import Polygon
-from .ops import intersection, union, difference
+from .set import intersection, union, difference
+from .mutation import buffer, offset
 
-__all__ = ["Polygon", "intersection", "union", "difference"]
+__all__ = ["Polygon", "intersection", "union", "difference", "buffer", "offset"]
