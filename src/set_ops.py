@@ -73,13 +73,6 @@ def union(
         and retry with a larger `max_vertices` if necessary.
     """
     # Robust implementation using segment stitching
-    # Logic:
-    # For each polygon P_i in the list:
-    #   Segments = edges of P_i
-    #   For each polygon P_j (j != i):
-    #     Segments = clip_segments(Segments, P_j, keep_inside=False)
-    #   Add Segments to collection.
-    # Stitch collection.
 
     num_polys = len(polygons)
     if num_polys == 0:

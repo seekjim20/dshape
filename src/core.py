@@ -14,25 +14,10 @@ def _clean_vertices(vertices, count):
     # Mask valid vertices
     mask = jnp.arange(vertices.shape[0]) < count
 
-    # Compare with previous vertex
-    # Roll vertices to compare i with i-1
+    # Compare with previous vertex to remove consecutive duplicates
     prev_verts = jnp.roll(vertices, 1, axis=0)
-
-    # First vertex is always kept (unless count=0, but loop logic handles it?)
-    # Actually, jnp.roll wraps around. so vertex 0 compares with vertex N-1.
-    # This removes closure duplicate? Yes tailored for closed loops.
-
     diff = jnp.abs(vertices - prev_verts).sum(axis=1)
     is_distinct = diff > 1e-6
-
-    # Always keep vertex 0? No, if it's same as end, we might keep it if needed for closure representation?
-    # But usually we want Unique vertices.
-    # Wait, dshape Polygon usually implies implicit closure.
-    # So if last == first, we should remove last.
-    # But this logic does 'consecutive duplicates'.
-
-    # Let's keep existing logic from ops.py implies
-    # (Checking diff > 1e-6)
 
     keep = is_distinct & mask
 
@@ -684,11 +669,6 @@ def _get_clipped_segments(
     max_out_verts,
     keep_inside=True,
 ):
-    # Capacity for intermediate segments.
-    # Max segments likely <= max_out_verts * 2.
-    # We define capacity for the expanded segments.
-    # OLD: capacity = 200  # Fixed internal capacity for safety
-    # NEW: Use static dynamic size based on output requirement
     capacity = max_out_verts * 2
 
     # 1. Expand Subject Edge to Sub-segments
@@ -775,31 +755,7 @@ def _clip_segments(
         tuple: (output_segments, output_count)
     """
     # 1. Expand segments by intersecting with clip edges
-    # We maintain segments in (K, 2, 2) format.
-
-    # To reuse _insert_intersections, we need to adapt it.
-    # _insert_intersections takes (p1, c1, p2, c2, max_v) and outputs vertices.
-    # It assumes p1 is a connected loop.
-    # Our 'segments' are disconnected.
-
-    # We can write a specialized segment-clipper.
-
-    # A segment (A, B) intersected by clip polygon edges might become multiple segments (A, I1), (I1, I2), (I2, B).
-    # Then we filter them based on midpoint.
-
-    # Step 1: Find intersections of EACH segment with ALL clip edges.
-    # Collect all points (start, end, intersections) on the segment line.
-    # Sort them by distance from start.
-    # Form sub-segments.
-
-    # Implementation details:
-    # Iterate segments. For each segment:
-    #   Find intersections with clip_verts.
-    #   Sort intersections.
-    #   Create sub-segments: (A, I1), (I1, I2)... (Im, B).
-    #   Check midpoint of each sub-segment.
-    #   Write valid ones to output buffer.
-
+    # 1. Expand segments by intersecting with clip edges
     out_buf = jnp.zeros((max_out_segments, 2, 2))
     out_ptr = 0
 
@@ -845,15 +801,7 @@ def _clip_segments(
         scan_limit = 100
         ints, valids, dists = jax.vmap(get_intersection)(jnp.arange(scan_limit))
 
-        # Add start (dist 0) and end (dist len_seg) to the list of points
-        # to form simple intervals.
-
-        # We need to sort points: Start, Int1, Int2... End.
-        # Let's verify we have capacity.
-        # Max intersections?
-
         # Pack candidates: Start, End, Inte...
-        # Candidates: (MAX_INT + 2)
         MAX_INT = 10
 
         cand_points = jnp.zeros((MAX_INT + 2, 2))

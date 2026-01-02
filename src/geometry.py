@@ -214,11 +214,7 @@ def _has_self_intersection(vertices: ArrayLike, count: ArrayLike) -> bool:
 
             # Valid pair logic:
             # i < count, j < count
-            # Non-adjacent:
-            # j != i (obviously)
-            # j != i+1 (next)
-            # i != j+1 (prev)
-            # i != 0 or j != count-1 (closing edge vs first edge is adjacent)
+            # Non-adjacent: i < j (symmetry), j != i + 1, not (i==0 and j==count-1)
 
             # Simple non-adjacency filter:
             # 1. i < j (symmetry) -> enforcing this avoids double check and i==j.
