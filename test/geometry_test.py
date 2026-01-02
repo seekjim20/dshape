@@ -38,6 +38,14 @@ class TestPolygon:
         expected_area = 3.0
         assert jnp.abs(area - expected_area) < 1e-4
 
+    def test_default_count(self):
+        # Test that count defaults to shape[0] correctly
+        vertices = jnp.array([[0, 0], [1, 0], [0, 1]], dtype=jnp.float32)
+        poly = geometry.Polygon(vertices=vertices)  # No count provided
+
+        assert poly.count == 3
+        assert poly.area > 0
+
 
 class TestRectangle:
     def test_rectangle_area(self):

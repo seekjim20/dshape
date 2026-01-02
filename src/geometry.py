@@ -29,8 +29,12 @@ class Polygon:
     """
 
     vertices: ArrayLike
-    count: ArrayLike
+    count: ArrayLike | None = None
     overflow: bool = False
+
+    def __post_init__(self):
+        if self.count is None:
+            self.count = self.vertices.shape[0]
 
     def tree_flatten(self):
         # We treat overflow as metadata (auxiliary) usually, but since it might be
