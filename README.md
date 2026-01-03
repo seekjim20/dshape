@@ -45,6 +45,13 @@ union_result = set_ops.union([p1, p2, p3])
 rotated = mutation.rotate(p1, angle_rad=jnp.pi/4, center=[0.5, 0.5])
 scaled = mutation.scale(p1, factor=2.0, origin=[0, 0])
 
+# Instance Methods (Shortcuts)
+# Most mutations are available directly on the Polygon object
+p_rot = p1.rotate(jnp.pi/2, center=[0,0])
+p_scaled = p1.scale(2.0, origin=[0,0])
+p_buf = p1.buffer(0.1)
+p_off = p1.offset(1.0, 1.0)
+
 # Operator Overloading (Syntactic Sugar)
 # (+) Union
 union_poly = p1 + p2
@@ -118,8 +125,11 @@ multi_poly = geometry.Polygon.from_exteriors_interiors(
 - `src/`: Source code.
     - `geometry.py`: Core `Polygon` class.
     - `set_ops.py`: Intersection, Union, Difference.
-    - `mutation.py`: Buffer, Offset.
-    - `core.py`: Internal geometric helpers.
+    - `mutation.py`: Buffer, Offset, Rotate, Scale.
+    - `constructive.py`: Convex Hull.
+    - `planarize.py`: Robust planarization logic (graph reconstruction).
+    - `plotting.py`: Visualization helpers (Plotly/Matplotlib).
+    - `core.py`: Internal geometric helpers (JAX kernels).
 - `test/`: Unit tests (using `pytest`).
 
 ## Testing

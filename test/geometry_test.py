@@ -249,6 +249,36 @@ class TestOperators:
         assert jnp.abs(hull.area - 1.0) < 1e-5
 
 
+class TestMutationShortcuts:
+    def test_offset_shortcut(self):
+        p = geometry.Rectangle(0, 0, 1, 1)  # Area 1, Center (0.5, 0.5)
+        p_moved = p.offset(1.0, 1.0)  # Center (1.5, 1.5)
+
+        assert jnp.abs(p_moved.area - 1.0) < 1e-5
+        # Check first vertex (0,0) -> (1,1)
+        assert jnp.linalg.norm(p_moved.vertices[0] - jnp.array([1.0, 1.0])) < 1e-5
+
+    def test_rotate_shortcut(self):
+        p = geometry.Rectangle(0, 0, 2, 2)  # Center (1,1)
+        p_rot = p.rotate(jnp.pi / 2, center=[1.0, 1.0])
+
+        assert jnp.abs(p_rot.area - 4.0) < 1e-5
+        assert p_rot.count == 4
+
+    def test_scale_shortcut(self):
+        p = geometry.Rectangle(0, 0, 1, 1)
+        p_scaled = p.scale(2.0, origin=[0, 0])
+
+        assert jnp.abs(p_scaled.area - 4.0) < 1e-5
+
+    def test_buffer_shortcut(self):
+        p = geometry.Rectangle(0, 0, 1, 1)
+        p_buf = p.buffer(0.1)
+
+        assert p_buf.area > 1.0
+        assert p_buf.count > 0
+
+
 if __name__ == "__main__":
     import sys
 

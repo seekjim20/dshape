@@ -361,6 +361,30 @@ class Polygon:
 
         return constructive.convex_hull(self)
 
+    def offset(self, dx: ArrayLike, dy: ArrayLike) -> "Polygon":
+        """Translates the polygon by (dx, dy)."""
+        import mutation
+
+        return mutation.offset(self, dx, dy)
+
+    def rotate(self, angle_rad: ArrayLike, center: ArrayLike) -> "Polygon":
+        """Rotates the polygon by an angle around a center point."""
+        import mutation
+
+        return mutation.rotate(self, angle_rad, center)
+
+    def scale(self, factor: ArrayLike, origin: ArrayLike) -> "Polygon":
+        """Scales the polygon by a factor relative to an origin."""
+        import mutation
+
+        return mutation.scale(self, factor, origin)
+
+    def buffer(self, distance: ArrayLike, max_vertices: int = 256) -> "Polygon":
+        """Computes the buffer of a polygon."""
+        import mutation
+
+        return mutation.buffer(self, distance, max_vertices)
+
 
 @jax.tree_util.register_pytree_node_class
 class Rectangle(Polygon):
