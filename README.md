@@ -4,15 +4,15 @@
 
 ## Features
 
-- **Differentiable Set Operations** (`dshape.set_ops`):
-    - `intersection(p1, p2)`: Sutherland-Hodgman clipping for polygons.
-    - `union([p1, p2, ...])`: Construct unified geometry from a sequence of polygons.
-    - `difference(p1, p2)`: Subtract one polygon from another.
 - **Differentiable Mutations** (`dshape.mutation`):
     - `offset(p, dx, dy)`: Translate polygons.
     - `rotate(p, angle, center)`: Rotate polygons around a point.
     - `scale(p, factor, origin)`: Scale polygons (uniform/non-uniform) from an origin.
     - `buffer(p, distance)`: Dilate (>0) or erode (<0) polygons with straight (miter) or rounded (arc) corners.
+- **Differentiable Set Operations** (`dshape.set_ops`):
+    - `intersection(p1, p2)`: Sutherland-Hodgman clipping for polygons.
+    - `union([p1, p2, ...])`: Construct unified geometry from a sequence of polygons.
+    - `difference(p1, p2)`: Subtract one polygon from another.
 - **Constructive Geometry** (`dshape.constructive`):
     - `convex_hull(p)`: Computes the convex hull of a polygon (including multi-ring inputs).
 - **JAX Integration**: Fully compatible with `jax.jit`, `jax.grad`, and `jax.vmap`.
