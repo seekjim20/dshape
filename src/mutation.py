@@ -253,3 +253,48 @@ def offset(polygon: geometry.Polygon, dx: ArrayLike, dy: ArrayLike) -> geometry.
         ring_counts=polygon.ring_counts,
         overflow=polygon.overflow,
     )
+
+
+def rotate(
+    polygon: geometry.Polygon, angle_rad: ArrayLike, center: ArrayLike
+) -> geometry.Polygon:
+    """Rotates the polygon by an angle around a center point.
+
+    Args:
+        polygon: Input polygon.
+        angle_rad: Rotation angle in radians.
+        center: Center of rotation (x, y).
+
+    Returns:
+        Rotated polygon.
+    """
+    center = jnp.array(center)
+    vertices = polygon.vertices
+
+    # Translate to origin
+    vertices_centered = vertices - center
+
+    # Rotation matrix
+    cos_a = jnp.cos(angle_rad)
+    sin_a = jnp.sin(angle_rad)
+
+    # R * v
+    # x' = x cos - y sin
+    # y' = x sin + y cos
+    x = vertices_centered[:, 0]
+    y = vertices_centered[:, 1]
+
+    x_new = x * cos_a - y * sin_a
+    y_new = x * sin_a + y * cos_a
+
+    vertices_rotated = jnp.stack([x_new, y_new], axis=1)
+
+    # Translate back
+    vertices_final = vertices_rotated + center
+
+    return geometry.Polygon(
+        vertices=vertices_final,
+        count=polygon.count,
+        ring_counts=polygon.ring_counts,
+        overflow=polygon.overflow,
+    )

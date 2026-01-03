@@ -240,6 +240,59 @@ class TestRobustErosion(TestOpsBase):
         assert p_eroded.area > 4.0
 
 
+class TestRotate(TestOpsBase):
+    def test_rotate_square_90(self):
+        # Square [0,0] to [1,1]
+        # Rotate 90 deg (pi/2) around (0,0)
+        # Expected:
+        # (0,0) -> (0,0)
+        # (1,0) -> (0,1)
+        # (1,1) -> (-1,1)
+        # (0,1) -> (-1,0)
+
+        sq = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        angle = jnp.pi / 2.0
+        center = jnp.array([0.0, 0.0])
+
+        rotated = mutation.rotate(sq, angle, center)
+
+        # Check Vertices
+        # We know the vertex order from Rectangle:
+        # [x, y], [x+w, y], [x+w, y+h], [x, y+h]
+        # [0,0], [1,0], [1,1], [0,1]
+
+        expected = jnp.array(
+            [[0.0, 0.0], [0.0, 1.0], [-1.0, 1.0], [-1.0, 0.0]], dtype=jnp.float32
+        )
+
+        assert jnp.allclose(rotated.vertices[:4], expected, atol=1e-5)
+
+        # Area invariant
+        assert jnp.abs(rotated.area - sq.area) < 1e-5
+
+    def test_rotate_center_invariant(self):
+        # Rotating a shape around its own center should just spin it
+        # If we rotate a circle around its center, vertices change but shape remains (approx)
+
+        # Square centered at 0
+        sq = geometry.Rectangle(-1.0, -1.0, 2.0, 2.0)  # Center (0,0)
+
+        # Rotate 45 deg
+        angle = jnp.pi / 4.0
+        rotated = mutation.rotate(sq, angle, jnp.array([0.0, 0.0]))
+
+        # Area should be identical
+        assert jnp.abs(rotated.area - sq.area) < 1e-5
+
+        # Bounding box should expand
+        # Original extent [-1, 1]. Size 2.
+        # Rotated extent: Diagonal becomes axis aligned magnitude?
+        # Max x should be sqrt(2) ~ 1.414
+
+        max_x = jnp.max(rotated.vertices[:4, 0])
+        assert jnp.abs(max_x - jnp.sqrt(2)) < 1e-4
+
+
 if __name__ == "__main__":
     import sys
 
