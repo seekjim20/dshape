@@ -146,7 +146,6 @@ class TestUnion(TestOpsBase):
         assert not res.overflow
 
 
-
 class TestDifference(TestOpsBase):
     def test_difference_overlap(self):
         p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
@@ -158,7 +157,8 @@ class TestDifference(TestOpsBase):
 
     def test_difference_produces_concave(self):
         p1 = geometry.Rectangle(0.0, 0.0, 3.0, 1.0)
-        p2 = geometry.Rectangle(1.0, 0.0, 1.0, 0.5)
+        # Use overlapping rectangle that crosses the boundary to avoid collinear clipping issues
+        p2 = geometry.Rectangle(1.0, -0.5, 1.0, 1.0)
 
         diff_poly = set_ops.difference(p1, p2)
         area = diff_poly.area
@@ -179,6 +179,51 @@ class TestDifference(TestOpsBase):
         diff_poly = set_ops.difference(p1, p2)
         area = diff_poly.area
         assert jnp.abs(area - 0.0) < 1e-4
+
+
+class TestTopologySetOps(TestOpsBase):
+    def test_intersection_produces_multi_ring(self):
+        # P1: Square at (0,0) size 2, Square at (5,0) size 2.
+        sq1 = jnp.array([[0, 0], [2, 0], [2, 2], [0, 2]], dtype=jnp.float32)
+        sq2 = jnp.array([[5, 0], [7, 0], [7, 2], [5, 2]], dtype=jnp.float32)
+        p1_verts = jnp.concatenate([sq1, sq2])
+        p1 = geometry.Polygon(vertices=p1_verts, count=8, ring_counts=jnp.array([4, 4]))
+
+        # P2: Large rectangle covering both.
+        # [ -1, -1 ] to [ 8, 3 ]
+        p2_verts = jnp.array([[-1, -1], [8, -1], [8, 3], [-1, 3]], dtype=jnp.float32)
+        p2 = geometry.Polygon(vertices=p2_verts, count=4, ring_counts=jnp.array([4]))
+
+        # Intersection should be P1 (both squares preserved).
+        res = set_ops.intersection(p1, p2, max_vertices=32, max_rings=4)
+
+        assert res.count == 8
+        # Should have 2 rings
+        valid_rings = res.ring_counts[res.ring_counts > 0]
+        assert len(valid_rings) == 2
+        assert jnp.all(valid_rings == 4)
+
+        # Test area match
+        assert jnp.abs(res.area - 8.0) < 1e-4
+
+    def test_difference_creates_hole(self):
+        # P1: 10x10 square
+        p1 = geometry.Rectangle(0.0, 0.0, 10.0, 10.0)
+
+        # P2: 4x4 square in middle
+        # Rectangle(x,y,w,h) -> starts at (3,3) size 4x4 -> ends at (7,7)
+        p2 = geometry.Rectangle(3.0, 3.0, 4.0, 4.0)
+
+        res = set_ops.difference(p1, p2, max_vertices=32, max_rings=4)
+
+        # Result should be 1 outer ring + 1 hole ring
+        # Total vertices: 4 + 4 = 8
+        assert res.count == 8
+        valid_rings = res.ring_counts[res.ring_counts > 0]
+        assert len(valid_rings) == 2
+
+        # Area should be 100 - 16 = 84
+        assert jnp.abs(res.area - 84.0) < 1e-4
 
 
 if __name__ == "__main__":

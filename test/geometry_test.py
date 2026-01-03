@@ -97,6 +97,102 @@ class TestCircle:
         assert res > 0
 
 
+class TestPolygonAPI:
+    def test_exteriors_interiors(self):
+        # Create a square (CCW)
+        sq_verts = jnp.array([[0, 0], [3, 0], [3, 3], [0, 3]], dtype=jnp.float32)
+        p1 = geometry.Polygon(vertices=sq_verts, count=4)
+
+        # Create a hole (CW)
+        hole_verts = jnp.array([[1, 1], [1, 2], [2, 2], [2, 1]], dtype=jnp.float32)
+        p2 = geometry.Polygon(vertices=hole_verts, count=4)
+
+        # Combine manually
+        combined_verts = jnp.concatenate([sq_verts, hole_verts])
+        combined_rc = jnp.array([4, 4])
+        poly = geometry.Polygon(
+            vertices=combined_verts, count=8, ring_counts=combined_rc
+        )
+
+        # Check exteriors
+        exts = poly.exteriors
+        assert len(exts) == 1
+        assert jnp.allclose(exts[0].vertices[:4], sq_verts)
+
+        # Check interiors
+        ints = poly.interiors
+        assert len(ints) == 1
+        assert jnp.allclose(ints[0].vertices[:4], hole_verts)
+
+    def test_from_exteriors_interiors(self):
+        # Create components
+        ext = geometry.Rectangle(0, 0, 3, 3)
+        # Create interior as a normal rectangle (positive area)
+        # Factory should flip it to negative
+        hole = geometry.Rectangle(1, 1, 1, 1)
+
+        poly = geometry.Polygon.from_exteriors_interiors([ext], [hole])
+
+        assert poly.count == 8
+        assert len(poly.ring_counts) >= 2  # Might be padded
+        assert poly.ring_counts[0] == 4
+        assert poly.ring_counts[1] == 4
+
+        # Check area: 9 - 1 = 8
+        assert jnp.abs(poly.area - 8.0) < 1e-5
+
+        # Check properties
+        assert len(poly.exteriors) == 1
+        assert len(poly.interiors) == 1
+
+    def test_multi_exterior(self):
+        r1 = geometry.Rectangle(0, 0, 1, 1)
+        r2 = geometry.Rectangle(2, 2, 1, 1)
+
+        poly = geometry.Polygon.from_exteriors_interiors([r1, r2])
+
+        assert poly.count == 8
+        assert poly.area == 2.0
+        assert len(poly.exteriors) == 2
+        assert len(poly.interiors) == 0
+
+
+class TestTopologyGeometry:
+    def test_multi_ring_area(self):
+        # Create a square with a hole
+        outer_verts = jnp.array([[0, 0], [10, 0], [10, 10], [0, 10]], dtype=jnp.float32)
+        hole_cw = jnp.array([[3, 3], [3, 7], [7, 7], [7, 3]], dtype=jnp.float32)  # CW
+
+        # Pack
+        all_verts = jnp.concatenate([outer_verts, hole_cw], axis=0)
+        ring_counts = jnp.array([4, 4])
+
+        poly = geometry.Polygon(vertices=all_verts, count=8, ring_counts=ring_counts)
+
+        area = poly.area
+        expected = 100.0 - 16.0  # 10*10 - 4*4
+        assert jnp.abs(area - expected) < 1e-4
+
+    def test_self_intersection_multi_ring(self):
+        # Ring 1: Valid square
+        # Ring 2: Bowtie (self-intersecting)
+        sq = jnp.array([[0, 0], [2, 0], [2, 2], [0, 2]], dtype=jnp.float32)
+        bowtie = jnp.array([[5, 0], [7, 2], [5, 2], [7, 0]], dtype=jnp.float32)
+
+        verts = jnp.concatenate([sq, bowtie])
+        p = geometry.Polygon(vertices=verts, count=8, ring_counts=jnp.array([4, 4]))
+
+        has_int = p.self_intersect
+        assert has_int  # Because bowtie intersects itself
+
+        # Case 2: Intersection BETWEEN rings
+        sq1 = jnp.array([[0, 0], [4, 0], [4, 4], [0, 4]], dtype=jnp.float32)
+        sq2 = jnp.array([[3, 3], [7, 3], [7, 7], [3, 7]], dtype=jnp.float32)
+        verts2 = jnp.concatenate([sq1, sq2])
+        p2 = geometry.Polygon(vertices=verts2, count=8, ring_counts=jnp.array([4, 4]))
+        assert p2.self_intersect
+
+
 if __name__ == "__main__":
     import sys
 
