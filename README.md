@@ -9,8 +9,10 @@
     - `union([p1, p2, ...])`: Construct unified geometry from a sequence of polygons.
     - `difference(p1, p2)`: Subtract one polygon from another.
 - **Differentiable Mutations** (`dshape.mutation`):
-    - `buffer(p, distance)`: Dilate (>0) or erode (<0) polygons with straight (miter) or rounded (arc) corners.
     - `offset(p, dx, dy)`: Translate polygons.
+    - `rotate(p, angle, center)`: Rotate polygons around a point.
+    - `scale(p, factor, origin)`: Scale polygons (uniform/non-uniform) from an origin.
+    - `buffer(p, distance)`: Dilate (>0) or erode (<0) polygons with straight (miter) or rounded (arc) corners.
 - **JAX Integration**: Fully compatible with `jax.jit`, `jax.grad`, and `jax.vmap`.
 - **Robustness**: Handles degenerate cases, self-intersections (pruning), and floating-point edge cases.
 
@@ -36,6 +38,10 @@ p1 = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
 p2 = geometry.Rectangle(0.5, 0.0, 1.0, 1.0)
 p3 = geometry.Rectangle(1.0, 0.0, 1.0, 1.0)
 union_result = set_ops.union([p1, p2, p3])
+
+# Rotate and Scale
+rotated = mutation.rotate(p1, angle_rad=jnp.pi/4, center=[0.5, 0.5])
+scaled = mutation.scale(p1, factor=2.0, origin=[0, 0])
 ```
 
 ## Multi-Ring Polygons (Holes & Islands)
