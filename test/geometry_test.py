@@ -193,6 +193,53 @@ class TestTopologyGeometry:
         assert p2.self_intersect
 
 
+class TestOperators:
+    def test_add_substitution(self):
+        # p1 + p2 should be union
+        p1 = geometry.Rectangle(0, 0, 1, 1)  # Area 1
+        p2 = geometry.Rectangle(1, 0, 1, 1)  # Area 1, touches p1
+
+        # Union area should be 2
+        p3 = p1 + p2
+        assert jnp.abs(p3.area - 2.0) < 1e-5
+
+        # Check chaining
+        p4 = geometry.Rectangle(2, 0, 1, 1)
+        p5 = p1 + p2 + p4
+        assert jnp.abs(p5.area - 3.0) < 1e-5
+
+    def test_sub_substitution(self):
+        # p1 - p2 should be difference
+        p1 = geometry.Rectangle(0, 0, 2, 2)  # Area 4
+        p2 = geometry.Rectangle(0.5, 0.5, 1, 1)  # Area 1, fully inside
+
+        p3 = p1 - p2
+        assert jnp.abs(p3.area - 3.0) < 1e-5
+
+    def test_mul_substitution(self):
+        # p1 * p2 should be intersection
+        p1 = geometry.Rectangle(0, 0, 2, 2)  # Area 4
+        p2 = geometry.Rectangle(1, 0, 2, 2)  # Intersection [1,0] to [2,2] -> Area 2
+
+        p3 = p1 * p2
+        assert jnp.abs(p3.area - 2.0) < 1e-5
+
+    def test_invalid_operands(self):
+        p1 = geometry.Rectangle(0, 0, 1, 1)
+
+        # + 1 -> TypeError (NotImplemented)
+        with pytest.raises(TypeError):
+            _ = p1 + 1
+
+        # - 1
+        with pytest.raises(TypeError):
+            _ = p1 - 1
+
+        # * 1
+        with pytest.raises(TypeError):
+            _ = p1 * 1
+
+
 if __name__ == "__main__":
     import sys
 
