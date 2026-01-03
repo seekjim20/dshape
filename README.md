@@ -36,6 +36,8 @@ p1 = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
 p2 = geometry.Rectangle(0.5, 0.0, 1.0, 1.0)
 p3 = geometry.Rectangle(1.0, 0.0, 1.0, 1.0)
 union_result = set_ops.union([p1, p2, p3])
+```
+
 ## Multi-Ring Polygons (Holes & Islands)
 
 `dshape` supports polygons with multiple rings (e.g., shapes with holes, disjoint islands, or nested shells).
