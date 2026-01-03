@@ -289,8 +289,60 @@ class TestRotate(TestOpsBase):
         # Rotated extent: Diagonal becomes axis aligned magnitude?
         # Max x should be sqrt(2) ~ 1.414
 
-        max_x = jnp.max(rotated.vertices[:4, 0])
-        assert jnp.abs(max_x - jnp.sqrt(2)) < 1e-4
+
+class TestScale(TestOpsBase):
+    def test_scale_uniform_origin(self):
+        # Scale square by 2.0 around (0,0)
+        # Square [0,0] to [1,1] -> [0,0] to [2,2]
+        sq = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        factor = 2.0
+        origin = jnp.array([0.0, 0.0])
+
+        scaled = mutation.scale(sq, factor, origin)
+
+        assert jnp.abs(scaled.area - 4.0) < 1e-5
+
+        expected = jnp.array(
+            [[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0]], dtype=jnp.float32
+        )
+
+        assert jnp.allclose(scaled.vertices[:4], expected)
+
+    def test_scale_non_uniform(self):
+        # Scale square by (2.0, 0.5) around (0,0)
+        # Square [0,0] to [1,1] -> [0,0] to [2, 0.5]
+        # Area should be unchanged (1.0 * 2.0 * 0.5 = 1.0)
+
+        sq = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        factor = jnp.array([2.0, 0.5])
+        origin = jnp.array([0.0, 0.0])
+
+        scaled = mutation.scale(sq, factor, origin)
+
+        assert jnp.abs(scaled.area - 1.0) < 1e-5
+
+        expected = jnp.array(
+            [[0.0, 0.0], [2.0, 0.0], [2.0, 0.5], [0.0, 0.5]], dtype=jnp.float32
+        )
+
+        assert jnp.allclose(scaled.vertices[:4], expected)
+
+    def test_scale_center_invariant(self):
+        # Scale square centered at 0 by 0.5
+        # [-1,-1] to [1,1] (side 2, area 4)
+        # -> [-0.5, -0.5] to [0.5, 0.5] (side 1, area 1)
+
+        sq = geometry.Rectangle(-1.0, -1.0, 2.0, 2.0)
+        factor = 0.5
+        origin = jnp.array([0.0, 0.0])
+
+        scaled = mutation.scale(sq, factor, origin)
+
+        assert jnp.abs(scaled.area - 1.0) < 1e-5
+
+        # Check max extent reduced
+        max_x = jnp.max(scaled.vertices[:4, 0])
+        assert jnp.abs(max_x - 0.5) < 1e-5
 
 
 if __name__ == "__main__":

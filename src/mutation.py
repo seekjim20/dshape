@@ -298,3 +298,38 @@ def rotate(
         ring_counts=polygon.ring_counts,
         overflow=polygon.overflow,
     )
+
+
+def scale(
+    polygon: geometry.Polygon, factor: ArrayLike, origin: ArrayLike
+) -> geometry.Polygon:
+    """Scales the polygon by a factor relative to an origin.
+
+    Args:
+        polygon: Input polygon.
+        factor: Scale factor. Can be scalar (uniform) or (sx, sy) (non-uniform).
+        origin: Center of scaling (x, y).
+
+    Returns:
+        Scaled polygon.
+    """
+    origin = jnp.array(origin)
+    factor = jnp.array(factor)
+    vertices = polygon.vertices
+
+    # Translate to origin
+    vertices_centered = vertices - origin
+
+    # Scale
+    # vector * scalar or vector * vector (element-wise) works automatically in JAX
+    vertices_scaled = vertices_centered * factor
+
+    # Translate back
+    vertices_final = vertices_scaled + origin
+
+    return geometry.Polygon(
+        vertices=vertices_final,
+        count=polygon.count,
+        ring_counts=polygon.ring_counts,
+        overflow=polygon.overflow,
+    )
