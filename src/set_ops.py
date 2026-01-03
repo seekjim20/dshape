@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import geometry
 import core
+from typing import Sequence
 
 
 @jax.jit(static_argnames=["max_vertices"])
@@ -49,9 +50,6 @@ def intersection(
     safe_count = jnp.minimum(count, max_vertices)
 
     return geometry.Polygon(vertices=vertices, count=safe_count, overflow=overflow)
-
-
-from typing import Sequence
 
 
 @jax.jit(static_argnames=["max_vertices"])
