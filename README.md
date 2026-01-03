@@ -13,6 +13,8 @@
     - `rotate(p, angle, center)`: Rotate polygons around a point.
     - `scale(p, factor, origin)`: Scale polygons (uniform/non-uniform) from an origin.
     - `buffer(p, distance)`: Dilate (>0) or erode (<0) polygons with straight (miter) or rounded (arc) corners.
+- **Constructive Geometry** (`dshape.constructive`):
+    - `convex_hull(p)`: Computes the convex hull of a polygon (including multi-ring inputs).
 - **JAX Integration**: Fully compatible with `jax.jit`, `jax.grad`, and `jax.vmap`.
 - **Robustness**: Handles degenerate cases, self-intersections (pruning), and floating-point edge cases.
 
@@ -50,6 +52,12 @@ union_poly = p1 + p2
 diff_poly = p1 - p2
 # (*) Intersection
 inter_poly = p1 * p2
+
+# Convex Hull
+from dshape import constructive
+hull = constructive.convex_hull(p1)
+# Or via property
+hull_prop = p1.convex_hull
 ```
 
 ## Multi-Ring Polygons (Holes & Islands)

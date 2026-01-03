@@ -1298,3 +1298,120 @@ def _generate_offset_chunks(vertices, indices, count, max_vertices, distance):
     # Let's abort the extraction via `replace_file_content` if we missed dependencies.
     # I will construct the function to be self-contained but it needs ring_counts.
     pass
+
+
+def _convex_hull(
+    vertices: ArrayLike, count: int, max_vertices: int
+) -> tuple[Array, int]:
+    """Computes the convex hull of a set of points using the Monotone Chain algorithm.
+
+    Args:
+        vertices: Input points (N, 2).
+        count: Number of valid points.
+        max_vertices: Buffer size for output.
+
+    Returns:
+        (hull_vertices, hull_count)
+    """
+    # 1. Filter valid vertices
+    indices = jnp.arange(vertices.shape[0])
+    # Set invalid vertices to Infinity so they sort to end
+    masked_verts = jnp.where(
+        indices[:, None] < count, vertices, jnp.array([jnp.inf, jnp.inf])
+    )
+
+    # 2. Sort points
+    # Lexicographical sort (primary X, secondary Y)
+    # jnp.lexsort((Y, X)) -> sorts by X (last key) then Y?
+    # No, lexsort(keys) -> Sort by keys[-1] (primary).
+    # So we want primary X. Keys should be (Y, X).
+    x = masked_verts[:, 0]
+    y = masked_verts[:, 1]
+
+    sort_idx = jnp.lexsort((y, x))
+    sorted_points = masked_verts[sort_idx]
+
+    n_points = count
+
+    # 3. Build Hull
+    # Cross product (O, A, B) -> (A-O) x (B-O)
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    # Monotone Chain scan
+    def build_chain(points_indices):
+        stack = jnp.zeros((max_vertices, 2))
+        ptr = 0  # Stack size
+
+        def step(state, i):
+            stk, p = state
+
+            # Current point to consider
+            curr_pt = sorted_points[i]
+
+            # While stack has >= 2 points AND cross(stack[-2], stack[-1], curr) <= 0
+            def cond(inner_state):
+                s, pt_idx = inner_state
+                size_ok = pt_idx >= 2
+
+                p_top = s[pt_idx - 1]
+                p_prev = s[pt_idx - 2]
+
+                cc = cross(p_prev, p_top, curr_pt)
+                # <= 0 means clockwise or collinear -> Remove top
+                geom_bad = cc <= 1e-7
+
+                return size_ok & geom_bad
+
+            def body(inner_state):
+                s, pt_idx = inner_state
+                return (s, pt_idx - 1)
+
+            stk, p = jax.lax.while_loop(cond, body, (stk, p))
+
+            # Push current if valid
+            valid_i = i < n_points
+            stk = stk.at[p].set(jnp.where(valid_i, curr_pt, stk[p]))
+            p = p + jnp.where(valid_i, 1, 0)
+
+            return (stk, p), None
+
+        (final_stack, final_ptr), _ = jax.lax.scan(step, (stack, ptr), points_indices)
+        return final_stack, final_ptr
+
+    # Lower Hull
+    indices = jnp.arange(vertices.shape[0])
+    lower_stack, lower_count = build_chain(indices)
+
+    # Upper Hull: iterate backwards
+    rev_indices = jnp.flip(indices)
+    upper_stack, upper_count = build_chain(rev_indices)
+
+    # 4. Concatenate
+    # L[:-1] + U[:-1]
+    safe_lower_c = jnp.maximum(0, lower_count - 1)
+    safe_upper_c = jnp.maximum(0, upper_count - 1)
+
+    idx = jnp.arange(max_vertices)
+
+    def merge_get(i):
+        is_lower = i < safe_lower_c
+        val_l = lower_stack[i]
+
+        u_idx = i - safe_lower_c
+        u_idx = jnp.maximum(0, jnp.minimum(u_idx, max_vertices - 1))
+        val_u = upper_stack[u_idx]
+
+        return jnp.where(is_lower, val_l, val_u)
+
+    final_verts = jax.vmap(merge_get)(idx)
+
+    total_count = safe_lower_c + safe_upper_c
+
+    # Mask out OOB
+    mask_valid = idx < total_count
+    final_verts = jnp.where(mask_valid[:, None], final_verts, 0.0)
+
+    final_c = jnp.minimum(total_count, max_vertices)
+
+    return final_verts, final_c

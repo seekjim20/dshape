@@ -239,6 +239,15 @@ class TestOperators:
         with pytest.raises(TypeError):
             _ = p1 * 1
 
+    def test_convex_hull_property(self):
+        # Verify p.convex_hull calls constructive
+        p1 = geometry.Rectangle(0, 0, 1, 1)
+        hull = p1.convex_hull
+
+        # Valid property access
+        assert isinstance(hull, geometry.Polygon)
+        assert jnp.abs(hull.area - 1.0) < 1e-5
+
 
 if __name__ == "__main__":
     import sys

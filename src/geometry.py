@@ -354,6 +354,13 @@ class Polygon:
 
         return set_ops.intersection(self, other)
 
+    @property
+    def convex_hull(self) -> "Polygon":
+        """Computes the convex hull of the polygon."""
+        import constructive
+
+        return constructive.convex_hull(self)
+
 
 @jax.tree_util.register_pytree_node_class
 class Rectangle(Polygon):
