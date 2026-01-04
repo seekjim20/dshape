@@ -1,8 +1,8 @@
 import jax
 import jax.numpy as jnp
 import pytest
-import geometry
-import constructive
+from dshape import geometry
+from dshape import constructive
 
 
 class TestConstructive:

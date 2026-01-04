@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import pytest
-import planarize
+from dshape import planarize
 
 
 class TestPlanarize:

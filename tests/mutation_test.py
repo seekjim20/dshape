@@ -1,9 +1,9 @@
 import jax
 import jax.numpy as jnp
 import pytest
-import geometry
-import mutation
-import core  # For _is_point_in_polygon usage in tests
+from dshape import geometry
+from dshape import mutation
+from dshape import core
 
 
 class TestOpsBase:

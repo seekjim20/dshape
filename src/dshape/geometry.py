@@ -327,64 +327,6 @@ class Polygon:
 
         return cls(vertices=all_v, count=total_count, ring_counts=r_counts)
 
-    def __add__(self, other: "Polygon") -> "Polygon":
-        """Union operator (+)"""
-        import set_ops
-
-        if not isinstance(other, Polygon):
-            return NotImplemented
-
-        return set_ops.union([self, other])
-
-    def __sub__(self, other: "Polygon") -> "Polygon":
-        """Difference operator (-)"""
-        import set_ops
-
-        if not isinstance(other, Polygon):
-            return NotImplemented
-
-        return set_ops.difference(self, other)
-
-    def __mul__(self, other: "Polygon") -> "Polygon":
-        """Intersection operator (*)"""
-        import set_ops
-
-        if not isinstance(other, Polygon):
-            return NotImplemented
-
-        return set_ops.intersection(self, other)
-
-    @property
-    def convex_hull(self) -> "Polygon":
-        """Computes the convex hull of the polygon."""
-        import constructive
-
-        return constructive.convex_hull(self)
-
-    def offset(self, dx: ArrayLike, dy: ArrayLike) -> "Polygon":
-        """Translates the polygon by (dx, dy)."""
-        import mutation
-
-        return mutation.offset(self, dx, dy)
-
-    def rotate(self, angle_rad: ArrayLike, center: ArrayLike) -> "Polygon":
-        """Rotates the polygon by an angle around a center point."""
-        import mutation
-
-        return mutation.rotate(self, angle_rad, center)
-
-    def scale(self, factor: ArrayLike, origin: ArrayLike) -> "Polygon":
-        """Scales the polygon by a factor relative to an origin."""
-        import mutation
-
-        return mutation.scale(self, factor, origin)
-
-    def buffer(self, distance: ArrayLike, max_vertices: int = 256) -> "Polygon":
-        """Computes the buffer of a polygon."""
-        import mutation
-
-        return mutation.buffer(self, distance, max_vertices)
-
 
 @jax.tree_util.register_pytree_node_class
 class Rectangle(Polygon):

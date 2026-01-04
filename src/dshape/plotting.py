@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import numpy as np
 import plotly.graph_objects as go
 from typing import Sequence, Union, Optional
-from geometry import Polygon
+from .geometry import Polygon
 
 
 def plot_polygons(

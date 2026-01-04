@@ -1,9 +1,9 @@
 import jax
 import jax.numpy as jnp
 import pytest
-import geometry
-import mutation
-import set_ops
+from dshape import geometry
+from dshape import mutation
+from dshape import set_ops
 
 
 class TestOpsBase:

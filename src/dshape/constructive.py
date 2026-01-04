@@ -3,8 +3,8 @@
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
-import geometry
-import core
+from . import geometry
+from . import core
 
 
 @jax.jit(static_argnames=["max_vertices"])

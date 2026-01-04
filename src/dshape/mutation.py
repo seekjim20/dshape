@@ -4,9 +4,9 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 from jax.typing import ArrayLike
-import geometry
-import core
-import planarize
+from . import geometry
+from . import core
+from . import planarize
 
 
 @jax.jit(static_argnames=["max_vertices"])

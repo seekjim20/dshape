@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 from jax.typing import ArrayLike
-import core
+from . import core
 
 # Constants
 EPSILON = 1e-6

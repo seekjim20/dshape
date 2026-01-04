@@ -2,7 +2,7 @@
 
 import jax
 import jax.numpy as jnp
-import geometry
+from . import geometry
 
 # type hints
 from jax import Array

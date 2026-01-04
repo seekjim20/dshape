@@ -2,8 +2,8 @@
 
 import jax
 import jax.numpy as jnp
-import geometry
-import core
+from . import geometry
+from . import core
 from typing import Sequence
 
 
