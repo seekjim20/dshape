@@ -73,6 +73,33 @@ class TestConstructive:
         # Area > 0
         assert hull.area > 0
 
+    def test_convex_hull_grad(self):
+        # Regression test for reverse-mode differentiation compatibility
+        def calculate_area(radius):
+            radius = jnp.array(radius)
+            # Circle constructor uses tuple (xy) and radius since refactor
+            c = geometry.Circle((0.0, 0.0), radius, num_edges=50)
+            hull = constructive.convex_hull(c)
+            return hull.area
+
+        # Forward
+        r = 1.0
+        res = calculate_area(r)
+        assert res > 2.0
+
+        # Backward
+        grad_fn = jax.grad(calculate_area)
+        g = grad_fn(r)
+
+        # Exact area of N-gon circle: 0.5 * N * R^2 * sin(2pi/N)
+        # Derivative wrt R: N * R * sin(2pi/N)
+        # N=50, R=1, sin(2pi/50) ~ 0.125
+        # g ~ 50 * 1 * 0.125 ~ 6.25
+        # Approx 2*pi*R = 6.28
+
+        expected_g = 2 * jnp.pi * r
+        assert jnp.abs(g - expected_g) < 0.1
+
 
 if __name__ == "__main__":
     import sys

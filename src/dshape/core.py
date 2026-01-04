@@ -1349,25 +1349,32 @@ def _convex_hull(
             # Current point to consider
             curr_pt = sorted_points[i]
 
-            # While stack has >= 2 points AND cross(stack[-2], stack[-1], curr) <= 0
-            def cond(inner_state):
+            # Emulate while loop with fixed-length scan for autodiff
+            def pop_body(inner_state, _):
                 s, pt_idx = inner_state
-                size_ok = pt_idx >= 2
 
-                p_top = s[pt_idx - 1]
-                p_prev = s[pt_idx - 2]
+                # Check condition
+                size_ok = pt_idx >= 2
+                # Clamp indices for safety
+                idx_top = jnp.maximum(0, pt_idx - 1)
+                idx_prev = jnp.maximum(0, pt_idx - 2)
+
+                p_top = s[idx_top]
+                p_prev = s[idx_prev]
 
                 cc = cross(p_prev, p_top, curr_pt)
                 # <= 0 means clockwise or collinear -> Remove top
                 geom_bad = cc <= 1e-7
 
-                return size_ok & geom_bad
+                should_pop = size_ok & geom_bad
 
-            def body(inner_state):
-                s, pt_idx = inner_state
-                return (s, pt_idx - 1)
+                new_idx = pt_idx - 1
+                final_idx = jnp.where(should_pop, new_idx, pt_idx)
 
-            stk, p = jax.lax.while_loop(cond, body, (stk, p))
+                return (s, final_idx), None
+
+            # Unroll loop up to max_vertices times
+            (stk, p), _ = jax.lax.scan(pop_body, (stk, p), None, length=max_vertices)
 
             # Push current if valid
             valid_i = i < n_points
