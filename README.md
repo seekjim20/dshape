@@ -20,6 +20,10 @@
 
 ## Usage
 
+### Functional API
+
+The primary API uses module-level functions that operate on `Polygon` objects.
+
 ```python
 import jax.numpy as jnp
 from dshape import geometry, set_ops, mutation
@@ -28,43 +32,51 @@ from dshape import geometry, set_ops, mutation
 verts = jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
 poly = geometry.Polygon(vertices=verts, count=3)
 
-# Buffer it (Dilation)
-buffered_poly = mutation.buffer(poly, distance=0.1)
+# Offset (Translation)
+offset = mutation.offset(poly, dx=0.1, dy=0.1)
 
-# Intersect with another polygon
-clip_poly = geometry.Rectangle(0.5, 0.5, 1.0, 1.0)
-result = set_ops.intersection(buffered_poly, clip_poly)
+# Rotate (Rotation)
+rotated = mutation.rotate(poly, angle_rad=jnp.pi/4, center=[0.5, 0.5])
 
-# Union of multiple polygons
+# Scale (Scaling)
+scaled = mutation.scale(poly, factor=2.0, origin=[0, 0])
+
+# Buffer (Dilation)
+buffered = mutation.buffer(poly, distance=0.1)
+
+# Buffer (Erosion)
+eroded = mutation.buffer(poly, distance=-0.1)
+
+# Set Operations
 p1 = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
-p2 = geometry.Rectangle(0.5, 0.0, 1.0, 1.0)
-p3 = geometry.Rectangle(1.0, 0.0, 1.0, 1.0)
-union_result = set_ops.union([p1, p2, p3])
+p2 = geometry.Rectangle(0.5, 0.5, 1.0, 1.0)
 
-# Rotate and Scale
-rotated = mutation.rotate(p1, angle_rad=jnp.pi/4, center=[0.5, 0.5])
-scaled = mutation.scale(p1, factor=2.0, origin=[0, 0])
-
-# Instance Methods (Shortcuts)
-# Most mutations are available directly on the Polygon object
-p_rot = p1.rotate(jnp.pi/2, center=[0,0])
-p_scaled = p1.scale(2.0, origin=[0,0])
-p_buf = p1.buffer(0.1)
-p_off = p1.offset(1.0, 1.0)
-
-# Operator Overloading (Syntactic Sugar)
-# (+) Union
-union_poly = p1 + p2
-# (-) Difference
-diff_poly = p1 - p2
-# (*) Intersection
-inter_poly = p1 * p2
+union_res = set_ops.union([p1, p2])
+inter_res = set_ops.intersection(p1, p2)
+diff_res  = set_ops.difference(p1, p2)
 
 # Convex Hull
-from dshape import constructive
 hull = constructive.convex_hull(p1)
-# Or via property
-hull_prop = p1.convex_hull
+```
+
+### Object-Oriented API (Methods & Operators)
+
+For convenience, `dshape` provides method shortcuts and operator overloads directly on the `Polygon` class.
+
+```python
+# Mutation Methods
+p_buf = p1.buffer(0.1)
+p_off = p1.offset(1.0, 1.0)
+p_rot = p1.rotate(jnp.pi/2, center=[0, 0])
+p_scl = p1.scale(2.0, origin=[0, 0])
+
+# Set Operations (Operators)
+p_union = p1 + p2  # Union
+p_diff  = p1 - p2  # Difference
+p_inter = p1 * p2  # Intersection
+
+# properties
+hull = p1.convex_hull
 ```
 
 ## Multi-Ring Polygons (Holes & Islands)
