@@ -1,50 +1,51 @@
-from .geometry import Polygon
-from .set_ops import intersection, union, difference
-from .mutation import buffer, offset, rotate, scale
-from .constructive import convex_hull
+from . import geometry
+from . import set_ops
+from . import mutation
+from . import constructive
+from . import plotting
 
 # -- Monkey Patching Methods to Polygon --
 
 
 def _add(self, other):
     """Union operator (+)"""
-    if not isinstance(other, Polygon):
+    if not isinstance(other, geometry.Polygon):
         return NotImplemented
-    return union([self, other])
+    return set_ops.union([self, other])
 
 
 def _sub(self, other):
     """Difference operator (-)"""
-    if not isinstance(other, Polygon):
+    if not isinstance(other, geometry.Polygon):
         return NotImplemented
-    return difference(self, other)
+    return set_ops.difference(self, other)
 
 
 def _mul(self, other):
     """Intersection operator (*)"""
-    if not isinstance(other, Polygon):
+    if not isinstance(other, geometry.Polygon):
         return NotImplemented
-    return intersection(self, other)
+    return set_ops.intersection(self, other)
 
 
-Polygon.__add__ = _add
-Polygon.__sub__ = _sub
-Polygon.__mul__ = _mul
+geometry.Polygon.__add__ = _add
+geometry.Polygon.__sub__ = _sub
+geometry.Polygon.__mul__ = _mul
 
-Polygon.convex_hull = property(convex_hull)
-Polygon.buffer = buffer
-Polygon.offset = offset
-Polygon.rotate = rotate
-Polygon.scale = scale
+geometry.Polygon.convex_hull = property(constructive.convex_hull)
+geometry.Polygon.buffer = mutation.buffer
+geometry.Polygon.offset = mutation.offset
+geometry.Polygon.rotate = mutation.rotate
+geometry.Polygon.scale = mutation.scale
 
 __all__ = [
-    "Polygon",
-    "intersection",
-    "union",
-    "difference",
-    "buffer",
-    "offset",
-    "rotate",
-    "scale",
-    "convex_hull",
+    "geometry.Polygon",
+    "set_ops.intersection",
+    "set_ops.union",
+    "set_ops.difference",
+    "mutation.buffer",
+    "mutation.offset",
+    "mutation.rotate",
+    "mutation.scale",
+    "constructive.convex_hull",
 ]
