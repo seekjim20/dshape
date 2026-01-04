@@ -122,20 +122,20 @@ multi_poly = geometry.Polygon.from_exteriors_interiors(
 
 ## Structure
 
-- `src/`: Source code.
+- `src/dshape/`: Source code.
     - `geometry.py`: Core `Polygon` class.
     - `set_ops.py`: Intersection, Union, Difference.
     - `mutation.py`: Buffer, Offset, Rotate, Scale.
     - `constructive.py`: Convex Hull.
     - `planarize.py`: Robust planarization logic (graph reconstruction).
-    - `plotting.py`: Visualization helpers (Plotly/Matplotlib).
+    - `plotting.py`: Visualization helpers (Plotly).
     - `core.py`: Internal geometric helpers (JAX kernels).
-- `test/`: Unit tests (using `pytest`).
+- `tests/`: Unit tests (using `pytest`).
 
 ## Testing
 
 Run the test suite with:
 
 ```bash
-pytest test/
+pytest tests/
 ```
