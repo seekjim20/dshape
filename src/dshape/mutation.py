@@ -236,19 +236,19 @@ def buffer(
     )
 
 
-def offset(polygon: geometry.Polygon, dx: ArrayLike, dy: ArrayLike) -> geometry.Polygon:
+def offset(polygon: geometry.Polygon, dxy: ArrayLike) -> geometry.Polygon:
     """Translates the polygon by (dx, dy).
 
     Args:
         polygon: Input polygon.
-        dx: X translation.
-        dy: Y translation.
+        dxy: Translation vector (dx, dy).
 
     Returns:
         Offset polygon.
     """
+    dxy = jnp.array(dxy)
     return geometry.Polygon(
-        vertices=polygon.vertices + jnp.array([dx, dy]),
+        vertices=polygon.vertices + dxy,
         count=polygon.count,
         ring_counts=polygon.ring_counts,
         overflow=polygon.overflow,

@@ -5,7 +5,7 @@
 ## Features
 
 - **Differentiable Mutations** (`dshape.mutation`):
-    - `offset(p, dx, dy)`: Translate polygons.
+    - `offset(p, dxy)`: Translate polygons.
     - `rotate(p, angle, center)`: Rotate polygons around a point.
     - `scale(p, factor, origin)`: Scale polygons (uniform/non-uniform) from an origin.
     - `buffer(p, distance)`: Dilate (>0) or erode (<0) polygons with straight (miter) or rounded (arc) corners.
@@ -33,7 +33,7 @@ verts = jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
 poly = geometry.Polygon(vertices=verts, count=3)
 
 # Offset (Translation)
-offset = mutation.offset(poly, dx=0.1, dy=0.1)
+offset = mutation.offset(poly, dxy=(0.1, 0.1))
 
 # Rotate (Rotation)
 rotated = mutation.rotate(poly, angle_rad=jnp.pi/4, center=[0.5, 0.5])
@@ -66,7 +66,7 @@ For convenience, `dshape` provides method shortcuts and operator overloads direc
 ```python
 # Mutation Methods
 p_buf = p1.buffer(0.1)
-p_off = p1.offset(1.0, 1.0)
+p_off = p1.offset((1.0, 1.0))
 p_rot = p1.rotate(jnp.pi/2, center=[0, 0])
 p_scl = p1.scale(2.0, origin=[0, 0])
 

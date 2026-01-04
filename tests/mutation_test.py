@@ -175,7 +175,7 @@ class TestOffset(TestOpsBase):
     def test_offset_rectangle(self):
         rect = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
         dx, dy = 1.0, 0.5
-        shifted = mutation.offset(rect, dx, dy)
+        shifted = mutation.offset(rect, (dx, dy))
 
         assert jnp.abs(shifted.area - rect.area) < 1e-5
         # Check center/vertex
@@ -187,7 +187,7 @@ class TestOffset(TestOpsBase):
         rect = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
 
         def loss(d):
-            shifted = mutation.offset(rect, d[0], d[1])
+            shifted = mutation.offset(rect, d)
             # Minimize distance to origin of first vertex
             v0 = shifted.vertices[0]
             return jnp.sum(v0**2)
