@@ -19,7 +19,7 @@ def main():
     int_poly = set_ops.intersection(p1, p3)
 
     # 4. Circle
-    c1 = geometry.Circle(4, 4, 1.5, num_edges=64)
+    c1 = geometry.Circle((4, 4), 1.5, num_edges=64)
 
     # Plot Multiple
     polys = [p1, p2, diff_poly, int_poly, c1]

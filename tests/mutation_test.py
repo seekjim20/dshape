@@ -52,7 +52,7 @@ class TestBuffer(TestOpsBase):
         assert not eroded.self_intersect
 
     def test_buffer_circle(self):
-        c = geometry.Circle(0, 0, 1, num_edges=32)
+        c = geometry.Circle((0, 0), 1, num_edges=32)
         dist = 0.5
         buffered = mutation.buffer(c, dist)
         expected_area = jnp.pi * (1.5**2)
@@ -149,7 +149,7 @@ class TestBuffer(TestOpsBase):
 
     def test_buffer_overflow(self):
         # Create a circle with many edges
-        circle = geometry.Circle(0, 0, 1.0, num_edges=50)  # 50 vertices
+        circle = geometry.Circle((0, 0), 1.0, num_edges=50)  # 50 vertices
 
         # Buffer it with a VERY small max_vertices to force overflow
         # Buffer usually increases vertex count significantly (especially with round joins)

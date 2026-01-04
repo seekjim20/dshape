@@ -344,14 +344,19 @@ class Rectangle(Polygon):
 class Circle(Polygon):
     """Circle polygon approximated by N edges."""
 
-    def __init__(self, x, y, r, num_edges=32):
+    def __init__(self, center_xy, radius, num_edges=32):
         # Generate angles
         theta = jnp.linspace(0, 2 * jnp.pi, num_edges, endpoint=False)
 
-        # Stack into (N, 2) array
-        vx = x + r * jnp.cos(theta)
-        vy = y + r * jnp.sin(theta)
-        vertices = jnp.stack([vx, vy], axis=1).astype(jnp.float32)
+        # Offsets
+        cos_t = jnp.cos(theta)
+        sin_t = jnp.sin(theta)
+        offsets = radius * jnp.stack([cos_t, sin_t], axis=1)
+
+        # Center
+        center = jnp.array(center_xy)
+
+        vertices = (center + offsets).astype(jnp.float32)
 
         # Initialize parent Polygon
         super().__init__(

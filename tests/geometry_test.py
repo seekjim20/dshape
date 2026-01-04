@@ -67,7 +67,7 @@ class TestCircle:
     def test_circle_creation(self):
         x, y, r = 0.0, 0.0, 1.0
         num_edges = 100
-        circle = geometry.Circle(x, y, r, num_edges)
+        circle = geometry.Circle((x, y), r, num_edges)
 
         assert circle.count == num_edges
         assert circle.vertices.shape[0] == num_edges
@@ -78,7 +78,7 @@ class TestCircle:
 
     def test_circle_jit(self):
         x, y, r = 0.0, 0.0, 1.0
-        circle = geometry.Circle(x, y, r, num_edges=32)
+        circle = geometry.Circle((x, y), r, num_edges=32)
 
         @jax.jit
         def area_fn(p):
@@ -92,7 +92,7 @@ class TestCircle:
         def f(c):
             return c.area
 
-        circle = geometry.Circle(0, 0, 1)
+        circle = geometry.Circle((0, 0), 1)
         res = f(circle)
         assert res > 0
 
