@@ -239,6 +239,23 @@ class TestRobustErosion(TestOpsBase):
 
         assert p_eroded.area > 4.0
 
+    def test_reflex_erosion_miter(self):
+        # Regression test for reflex erosion (should use Miter/Intersection, not Arc)
+        vertices = jnp.array(
+            [[0.0, 0.0], [1.5, 0.0], [1.5, 0.5], [1.0, 0.5], [1.0, 2.0], [0.0, 2.0]],
+            dtype=jnp.float32,
+        )
+        p1 = geometry.Polygon(vertices=vertices, count=6)
+        dist = -0.3
+        p2 = mutation.buffer(p1, dist)
+
+        v2 = p2.vertices[: p2.count]
+        min_y = jnp.min(v2[:, 1])
+        min_x = jnp.min(v2[:, 0])
+
+        assert min_y >= 0.3 - 1e-4
+        assert min_x >= 0.3 - 1e-4
+
 
 class TestRotate(TestOpsBase):
     def test_rotate_square_90(self):

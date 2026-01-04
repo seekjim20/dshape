@@ -228,7 +228,11 @@ def _extract_edges(
 
 @jax.jit(static_argnames=["max_v", "max_rings"])
 def _stitch_segments(
-    segments: ArrayLike, count: int, max_v: int, max_rings: int = 16
+    segments: ArrayLike,
+    count: int,
+    max_v: int,
+    max_rings: int = 16,
+    seg_inverted_mask: ArrayLike = None,
 ) -> tuple[Array, int, Array]:
     """Stitches segments into multiple continuous polygon rings.
 
@@ -237,12 +241,16 @@ def _stitch_segments(
         count: Number of valid segments.
         max_v: Maximum number of vertices in the output.
         max_rings: Maximum number of rings to detect.
+        seg_inverted_mask: Optional boolean mask (N,) indicating inverted segments.
+                           Rings with >50% inverted segments are discarded (Ghost Rings).
 
     Returns:
         A tuple (vertices, vertex_count, ring_counts).
     """
     seg_starts = segments[:, 0, :]
-    seg_ends = segments[:, 1, :]
+
+    if seg_inverted_mask is None:
+        seg_inverted_mask = jnp.zeros(segments.shape[0], dtype=bool)
 
     # Mask for used segments
     # 0 = Unused, 1 = Used
@@ -251,57 +259,38 @@ def _stitch_segments(
     out_verts = jnp.zeros((max_v, 2))
     ring_counts = jnp.zeros(max_rings, dtype=jnp.int32)
 
-    # State: (curr_p, start_p, used_mask, buf_ptr, buf, ring_idx, ring_cnt)
-    # Init with invalid/dummy values, loop will pick first start
-
-    # We need a robust "Find Next Unused"
-    # To seed first ring:
-    # Pick unused segment with max X (likely outer boundary) or just first unused.
+    # State: (mode, curr_p, start_p, used_mask, ptr, buf, ring_idx, ring_cnt, ring_counts, ring_start_ptr, r_inv_cnt)
 
     def find_start_seg(mask):
-        # Prefer max X for consistent outer shell start?
-        # Or just argmin of mask (first available).
-        # max X is good for consistent winding order (CCW usually).
-
         valid_idxs = (~mask) & (jnp.arange(segments.shape[0]) < count)
-        # If no segments left?
         has_any = jnp.any(valid_idxs)
 
-        # Pick max X among valid
+        # Pick max X among valid to normalize start (helps consistency)
         xs = seg_starts[:, 0]
         safe_xs = jnp.where(valid_idxs, xs, -1e9)
         best_idx = jnp.argmax(safe_xs)
-
         return best_idx, has_any
 
     init_idx, has_first = find_start_seg(used_mask)
-
-    # If no segments, return empty
-    # Handle in state initialization?
-
-    # Initialize state
-    # If invalid, we set buf_ptr = max_v (break condition effectively or careful checks)
-
-    # We use a state machine in scan.
-    # Modes:
-    # 0: Searching for new ring start (or done)
-    # 1: Tracing ring
-
     init_mode = jnp.where(has_first, 1, 0)
 
-    # If mode 1:
+    # Init Mode 1 Trace vars
     curr_seg = segments[init_idx]
     p_start = curr_seg[0]
     p_curr = curr_seg[1]
 
-    # Update mask
-    used_mask = used_mask.at[init_idx].set(True)
+    first_inv = seg_inverted_mask[init_idx]
 
-    # Write start point
+    used_mask = used_mask.at[init_idx].set(True)
     out_verts = out_verts.at[0].set(p_start)
+
+    # Ptr 0 written. Next is 1.
+    # Ring started at 0.
     buf_ptr = 1
     ring_cnt = 1
     ring_idx = 0
+    ring_start_ptr = 0
+    r_inv_cnt = jnp.where(first_inv, 1, 0)
 
     init_state = (
         init_mode,
@@ -313,120 +302,114 @@ def _stitch_segments(
         ring_idx,
         ring_cnt,
         ring_counts,
+        ring_start_ptr,
+        r_inv_cnt,
     )
 
     def step(state, _):
-        mode, curr_p, start_p, mask, ptr, buf, r_idx, r_cnt, r_counts = state
+        (
+            mode,
+            curr_p,
+            start_p,
+            mask,
+            ptr,
+            buf,
+            r_idx,
+            r_cnt,
+            r_counts,
+            r_start_ptr,
+            inv_c,
+        ) = state
 
         # --- Mode 0: Search ---
-        # Try to find new start
         new_start_idx, found_new = find_start_seg(mask)
-
-        # If found: Transition to Mode 1
-        # Set curr_p, start_p, update mask, buf, ptr
 
         m0_seg = segments[new_start_idx]
         m0_p_start = m0_seg[0]
         m0_p_curr = m0_seg[1]
+        m0_inv = seg_inverted_mask[new_start_idx]
 
-        # Write start to buffer
-        m0_ptr = ptr + 1
-        m0_buf = buf.at[ptr].set(m0_p_start)  # write at old ptr
-        m0_mask = mask.at[new_start_idx].set(True)
-        m0_r_cnt = 1
-
-        # Valid transition if mode==0 and found_new and ptr < max_v and r_idx < max_rings
+        # Valid transition check
         can_start = (mode == 0) & found_new & (ptr < max_v) & (r_idx < max_rings)
 
+        # Transition updates
+        m0_start_ptr = ptr
+        m0_buf = buf.at[ptr].set(m0_p_start)
+        m0_ptr = ptr + 1
+        m0_mask = mask.at[new_start_idx].set(True)
+        m0_r_cnt = 1
+        m0_inv_c = jnp.where(m0_inv, 1, 0)
+
         # --- Mode 1: Trace ---
-        # 1. Close loop?
         dist_to_start = jnp.linalg.norm(curr_p - start_p)
         is_closed = dist_to_start < 1e-4
 
-        # 2. Find next segment
-        # Starts near curr_p
         dists = jnp.linalg.norm(seg_starts - curr_p, axis=1)
-        # Tight tolerance
         cand_mask = (dists < 1e-4) & (~mask) & (jnp.arange(segments.shape[0]) < count)
-
         has_cand = jnp.any(cand_mask)
-
-        # Score candidates (Cross product for sharpest turn? No, usually straightest/smoothest continuation?)
-        # For simple polygon tracing, just picking the one that matches is usually unique.
-        # But if vertex shared (figure 8), we need direction.
-        # Prefer minimal angle change? Or Leftmost?
-        # Let's assume manifold for now or take first valid.
-        cand_idx = jnp.argmax(cand_mask)  # Picks first valid
-
-        # Case A: Closed loop -> Finish ring, Go to Mode 0
-        # Case B: Found next -> Add point, Continue Mode 1
-        # Case C: Dead end -> Finish ring (Open?), Go to Mode 0
-
-        # If is_closed:
-        # Save r_cnt to r_counts[r_idx]
-        # r_idx++
-        # mode -> 0
+        cand_idx = jnp.argmax(cand_mask)
 
         finish_ring = (mode == 1) & (is_closed | (~has_cand))
-        # If dead end (~is_closed & ~has_cand), we effectively close it implicitly or leave it open?
-        # We record count. The logic assumes implied closure back to start if needed?
-        # Let's accept current state.
+
+        # Check Ghost (Partial Inversion Ratio)
+        # Avoid div by zero
+        safe_rc = jnp.maximum(r_cnt, 1)
+        inv_ratio = inv_c / safe_rc
+        is_ghost = inv_ratio > 0.5
 
         # Action: Finish Ring
-        fr_r_counts = r_counts.at[r_idx].set(r_cnt)
-        fr_r_idx = r_idx + 1
-        fr_mode = 0
+        # If ghost, discard (reset ptr). Else keep.
+        drop_ring = finish_ring & is_ghost
+        keep_ring = finish_ring & (~is_ghost)
+
+        fr_ptr = jnp.where(drop_ring, r_start_ptr, ptr)
+        fr_r_idx = jnp.where(drop_ring, r_idx, r_idx + 1)
+        fr_r_counts = jnp.where(drop_ring, r_counts, r_counts.at[r_idx].set(r_cnt))
 
         # Action: Continue Trace
         ct_seg = segments[cand_idx]
         ct_p_curr = ct_seg[1]
+        ct_inv = seg_inverted_mask[cand_idx]
+
         ct_mask = mask.at[cand_idx].set(True)
         ct_buf = buf.at[ptr].set(curr_p)
         ct_ptr = ptr + 1
         ct_r_cnt = r_cnt + 1
+        ct_inv_c = inv_c + jnp.where(ct_inv, 1, 0)
 
         # Select Next State
-
-        # If currently Mode 0:
-        # Stay 0 if !can_start. Else switch to 1.
-        next_mode = jnp.where(mode == 0, jnp.where(can_start, 1, 0), mode)
-
-        # If currently Mode 1:
-        # If finish_ring -> 0. Else stay 1.
-        next_mode = jnp.where(mode == 1, jnp.where(finish_ring, 0, 1), next_mode)
-
-        # Updates based on transition
-
+        next_mode = mode
         # 0 -> 1
-        # Use m0_* values
-        update_0_1 = (mode == 0) & can_start
+        next_mode = jnp.where((mode == 0) & can_start, 1, next_mode)
+        # 1 -> 0
+        next_mode = jnp.where((mode == 1) & finish_ring, 0, next_mode)
 
-        curr_p = jnp.where(update_0_1, m0_p_curr, curr_p)
-        start_p = jnp.where(update_0_1, m0_p_start, start_p)
-        mask = jnp.where(update_0_1, m0_mask, mask)
-        ptr = jnp.where(update_0_1, m0_ptr, ptr)
-        buf = jnp.where(update_0_1, m0_buf, buf)
-        r_cnt = jnp.where(update_0_1, m0_r_cnt, r_cnt)
+        # Updates
+        # 0 -> 1
+        condition_0_1 = (mode == 0) & can_start
+        curr_p = jnp.where(condition_0_1, m0_p_curr, curr_p)
+        start_p = jnp.where(condition_0_1, m0_p_start, start_p)
+        mask = jnp.where(condition_0_1, m0_mask, mask)
+        ptr = jnp.where(condition_0_1, m0_ptr, ptr)
+        buf = jnp.where(condition_0_1, m0_buf, buf)
+        r_cnt = jnp.where(condition_0_1, m0_r_cnt, r_cnt)
+        r_start_ptr = jnp.where(condition_0_1, m0_start_ptr, r_start_ptr)
+        inv_c = jnp.where(condition_0_1, m0_inv_c, inv_c)
 
-        # 1 -> 0 (Finish)
-        update_1_0 = (mode == 1) & finish_ring
-        r_counts = jnp.where(update_1_0, fr_r_counts, r_counts)
-        r_idx = jnp.where(update_1_0, fr_r_idx, r_idx)
-        # Ptr/Buf don't change on finish (start of ring was already written, last point is implied closed)
-        # Except if dead end, we might want to write last point?
-        # current logic: we write `curr_p` ONLY if converting to next segment.
-        # point `curr_p` is start of next segment.
-        # Vertices in buffer are [p1, p2, p3...].
-        # If closed, p_last connects to p1.
-        # So we don't write p_last duplicate.
+        # 1 -> 0 (Back to Search)
+        condition_1_0 = (mode == 1) & finish_ring
+        r_counts = jnp.where(condition_1_0, fr_r_counts, r_counts)
+        r_idx = jnp.where(condition_1_0, fr_r_idx, r_idx)
+        ptr = jnp.where(condition_1_0, fr_ptr, ptr)  # Reset ptr if ghost
 
         # 1 -> 1 (Continue)
-        update_1_1 = (mode == 1) & (~finish_ring)
-        curr_p = jnp.where(update_1_1, ct_p_curr, curr_p)
-        mask = jnp.where(update_1_1, ct_mask, mask)
-        buf = jnp.where(update_1_1, ct_buf, buf)
-        ptr = jnp.where(update_1_1, ct_ptr, ptr)
-        r_cnt = jnp.where(update_1_1, ct_r_cnt, r_cnt)
+        condition_1_1 = (mode == 1) & (~finish_ring)
+        curr_p = jnp.where(condition_1_1, ct_p_curr, curr_p)
+        mask = jnp.where(condition_1_1, ct_mask, mask)
+        buf = jnp.where(condition_1_1, ct_buf, buf)
+        ptr = jnp.where(condition_1_1, ct_ptr, ptr)
+        r_cnt = jnp.where(condition_1_1, ct_r_cnt, r_cnt)
+        inv_c = jnp.where(condition_1_1, ct_inv_c, inv_c)
 
         return (
             next_mode,
@@ -438,21 +421,25 @@ def _stitch_segments(
             r_idx,
             r_cnt,
             r_counts,
+            r_start_ptr,
+            inv_c,
         ), None
 
-    # Run Scan
-    # Max iterations = number of segments? Or Max Vertices?
-    # Max Vertices is safer bound.
     final_state, _ = jax.lax.scan(step, init_state, jnp.arange(max_v))
 
-    _, _, _, _, final_ptr, final_buf, final_r_idx, final_r_cnt, final_r_counts = (
-        final_state
-    )
-
-    # Handle implicit finish of last active ring if loop ended in Mode 1
-    # If we ran out of iterations, we might be mid-ring.
-    # We should save current count.
-    # But usually max_v iterations covers it.
+    (
+        _,
+        _,
+        _,
+        _,
+        final_ptr,
+        final_buf,
+        final_r_idx,
+        final_r_cnt,
+        final_r_counts,
+        _,
+        _,
+    ) = final_state
 
     return final_buf, final_ptr, final_r_counts
 
@@ -1055,10 +1042,10 @@ def _offset_vertex(
 
     # Decide Strategy
     # Case A: Miter/Intersection (Sharp corner)
-    # Used when: (Convex & Erosion) OR (Concave & Dilation) OR Parallel
-    use_intersection = (
-        (is_convex & (dist < 0)) | ((~is_convex) & (dist > 0)) | is_parallel
-    )
+    # Used when: (Convex & Erosion) OR (Concave & Dilation) OR (Concave & Erosion) OR Parallel
+    # Basically everything EXCEPT (Convex & Dilation).
+
+    use_intersection = (~(is_convex & (dist > 0))) | is_parallel
 
     def branch_miter(_):
         # Result: 1 point
@@ -1228,7 +1215,7 @@ def _buffer(
         valid = (
             (i < count)
             # We don't verify rings match because next_indices[i] GUARANTEES same ring
-            & (~is_inverted_edge[i])
+            # & (~is_inverted_edge[i])  <-- DISABLED FILTER to prevent gaps in topology
             & (cnt_i > 0)
             & (chunk_counts[idx_next] > 0)
         )
@@ -1237,30 +1224,43 @@ def _buffer(
 
     inter_segs, inter_valids = jax.vmap(extract_inter_segment)(indices)
 
+    # Inversion metadata
+    # Intra segments (corners) are never inverted
+    intra_invs = jnp.zeros(intra_segs.shape[0], dtype=bool)
+    inter_invs = is_inverted_edge  # (N,)
+
     # Combine all segments
     all_segs_list = [intra_segs, inter_segs]
     all_valids_list = [intra_valids, inter_valids]
+    all_invs_list = [intra_invs, inter_invs]
 
     total_segs = jnp.concatenate(all_segs_list, axis=0)
     total_valids = jnp.concatenate(all_valids_list, axis=0)
+    total_invs = jnp.concatenate(all_invs_list, axis=0)
 
     # Pack segments for stitcher
     out_seg_buf = jnp.zeros((capacity, 2, 2))
+    out_inv_buf = jnp.zeros(capacity, dtype=bool)
 
     def compress_step(state, x):
-        buf, ptr = state
-        seg, valid = x
-        buf = buf.at[ptr].set(jnp.where(valid, seg, buf[ptr]))
-        ptr = ptr + jnp.where(valid, 1, 0)
-        return (buf, ptr), None
+        buf, inv_buf, ptr = state
+        seg, valid, inv = x
 
-    (final_seg_buf, final_seg_count), _ = jax.lax.scan(
-        compress_step, (out_seg_buf, 0), (total_segs, total_valids)
+        buf = buf.at[ptr].set(jnp.where(valid, seg, buf[ptr]))
+        inv_buf = inv_buf.at[ptr].set(jnp.where(valid, inv, inv_buf[ptr]))
+
+        ptr = ptr + jnp.where(valid, 1, 0)
+        return (buf, inv_buf, ptr), None
+
+    (final_seg_buf, final_inv_buf, final_seg_count), _ = jax.lax.scan(
+        compress_step,
+        (out_seg_buf, out_inv_buf, 0),
+        (total_segs, total_valids, total_invs),
     )
 
     # 6. Stitch
     vertices, count, out_ring_counts = _stitch_segments(
-        final_seg_buf, final_seg_count, max_vertices
+        final_seg_buf, final_seg_count, max_vertices, seg_inverted_mask=final_inv_buf
     )
 
     # Overflow if generated segments exceeded max_vertices
