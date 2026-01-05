@@ -123,8 +123,8 @@ class TestUnion(TestOpsBase):
 
         p4 = set_ops.union([p2, p3])
 
-        # Expected area ~ 0.04452
-        assert jnp.abs(p4.area - 0.04452) < 1e-4
+        # Expected area ~ 0.04484 (UPDATED for adaptive buffer resolution=60)
+        assert jnp.abs(p4.area - 0.04484) < 1e-4
         assert not p4.overflow
 
     def test_union_three_polys(self):

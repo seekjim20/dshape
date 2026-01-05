@@ -987,13 +987,14 @@ def _check_edge_inversion_mask(input_verts, count, chunks, chunk_counts):
     return jax.vmap(check_edge)(indices)
 
 
+@jax.jit(static_argnames=["resolution"])
 def _offset_vertex(
     p: ArrayLike,
     n1: ArrayLike,
     n2: ArrayLike,
     is_convex: bool,
     dist: ArrayLike,
-    max_pts: int,
+    resolution: int,
 ) -> tuple[Array, int]:
     """Generates offset vertices for a corner P with incoming normal n1 and outgoing n2.
 
@@ -1003,10 +1004,11 @@ def _offset_vertex(
         n2: Outgoing edge normal (2,).
         is_convex: Boolean indicating if corner is convex.
         dist: Buffer distance.
-        max_pts: Maximum points to generate (e.g., for arc).
+        resolution: Resolution of the buffer operation (segments per circle).
+                    Also acts as the max buffer size for this corner.
 
     Returns:
-        A tuple (points, count). points has shape (max_pts, 2).
+        A tuple (points, count). points has shape (resolution, 2).
     """
 
     # Shifted lines:
@@ -1049,21 +1051,30 @@ def _offset_vertex(
 
     def branch_miter(_):
         # Result: 1 point
-        pts = jnp.zeros((max_pts, 2))
+        pts = jnp.zeros((resolution, 2))
         pts = pts.at[0].set(miter_pt)
         return pts, 1
 
     def branch_arc(_):
-        # Generate arc points
-        n_arc = 8
-        # Ensure n_arc <= max_pts.
-
-        fracs = jnp.arange(n_arc, dtype=jnp.float32) / (n_arc - 1)
-
-        # Determine angle direction
+        # Determine angle direction and magnitude
         d_final = diff
         d_final = jnp.where(is_convex & (diff < 0), diff + 2 * jnp.pi, d_final)
         d_final = jnp.where((~is_convex) & (diff > 0), diff - 2 * jnp.pi, d_final)
+
+        # Adaptive number of segments
+        # Resolution is segments per full circle (2pi)
+        # n = ceil( abs(angle) / (2pi) * resolution )
+        n_float = jnp.ceil(jnp.abs(d_final) / (2 * jnp.pi) * resolution)
+        n_arc = n_float.astype(jnp.int32)
+
+        # Clamp to [1, resolution] (should naturally be <= resolution since abs(d_final) <= 2pi)
+        n_arc = jnp.maximum(1, jnp.minimum(n_arc, resolution))
+
+        # Ensure n_arc <= resolution.
+
+        fracs = jnp.arange(resolution, dtype=jnp.float32) / (jnp.maximum(n_arc - 1, 1))
+        # Mask valid fracs
+        # We only need first n_arc points
 
         thetas = ang1 + fracs * d_final
 
@@ -1075,22 +1086,22 @@ def _offset_vertex(
 
         arc_pts = p + r * jnp.stack([c, s], axis=1)
 
-        # Pad to max_pts
-        out_a = jnp.zeros((max_pts, 2))
-        out_a = out_a.at[:n_arc].set(arc_pts)
+        # Zero out invalid points (masking done implicitly by return count)
+        # But for cleanliness, let's keep array as is. Valid range is 0..n_arc-1
 
-        return out_a, n_arc
+        return arc_pts, n_arc
 
     return jax.lax.cond(use_intersection, branch_miter, branch_arc, None)
 
 
-@jax.jit(static_argnames=["max_vertices"])
+@jax.jit(static_argnames=["max_vertices", "resolution"])
 def _buffer(
     vertices: ArrayLike,
     count: int,
     ring_counts: ArrayLike,
     distance: ArrayLike,
     max_vertices: int,
+    resolution: int = 60,
 ) -> tuple[Array, int, Array]:
 
     # Handle optional ring_counts
@@ -1156,12 +1167,13 @@ def _buffer(
     # 3. Generate Corner Segments
     # For each vertex, generate miter or arc
 
-    verts_per_corner = 16
+    # We use resolution as the max size for the corner chunk
+    # verts_per_corner = 16  <-- Removed, use resolution
 
     def process_corner(p, n_prev, n_next, convex, d):
-        return _offset_vertex(p, n_prev, n_next, convex, d, verts_per_corner)
+        return _offset_vertex(p, n_prev, n_next, convex, d, resolution)
 
-    # generated_chunks: (MaxIn, 16, 2)
+    # generated_chunks: (MaxIn, resolution, 2)
     # chunk_counts: (MaxIn,)
     corner_poly_fn = jax.vmap(process_corner, in_axes=(0, 0, 0, 0, None))
     generated_chunks, chunk_counts = corner_poly_fn(p, n1, n2, is_convex, distance)
@@ -1181,7 +1193,7 @@ def _buffer(
             valid = (j < cnt - 1) & (i < count)
             return jnp.stack([p1, p2]), valid
 
-        segs, valids = jax.vmap(get_seg)(jnp.arange(verts_per_corner - 1))
+        segs, valids = jax.vmap(get_seg)(jnp.arange(resolution - 1))
         return segs, valids
 
     intra_segs, intra_valids = jax.vmap(extract_intra_segments)(

@@ -9,9 +9,12 @@ from . import core
 from . import planarize
 
 
-@jax.jit(static_argnames=["max_vertices"])
+@jax.jit(static_argnames=["max_vertices", "resolution"])
 def buffer(
-    polygon: geometry.Polygon, distance: ArrayLike, max_vertices: int = 256
+    polygon: geometry.Polygon,
+    distance: ArrayLike,
+    max_vertices: int = 256,
+    resolution: int = 60,
 ) -> geometry.Polygon:
     """Computes the buffer of a polygon.
 
@@ -19,6 +22,7 @@ def buffer(
         polygon: Input polygon.
         distance: Buffer distance (positive for dilation, negative for erosion).
         max_vertices: Size of output buffer.
+        resolution: Resolution of arc segments (segments per full circle).
 
     Returns:
         Buffered polygon.
@@ -29,7 +33,12 @@ def buffer(
         and retry with a larger `max_vertices` if necessary.
     """
     vertices, count, ring_counts, buf_overflow = core._buffer(
-        polygon.vertices, polygon.count, polygon.ring_counts, distance, max_vertices
+        polygon.vertices,
+        polygon.count,
+        polygon.ring_counts,
+        distance,
+        max_vertices,
+        resolution=resolution,
     )
 
     # Note: _buffer usually cleans vertices, so checking input count > max_vertices
