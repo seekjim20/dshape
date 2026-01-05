@@ -39,6 +39,7 @@ from dshape import geometry
 vertices = jnp.array([[0., 0.], [2., 0.], [1., 2.]])
 triangle = geometry.Polygon(vertices=vertices, count=3)
 ```
+![Simple Polygon](docs/images/usage_simple_poly.png)
 
 #### 2. Primitives (Shorthand)
 `dshape` provides helper classes for common shapes.
@@ -51,6 +52,7 @@ rect = geometry.Rectangle(0., 0., 5., 3.)
 # approximated by a polygon with `num_edges` (default 32)
 circle = geometry.Circle((0., 0.), 2.0, num_edges=64)
 ```
+![Primitives](docs/images/usage_primitives.png)
 
 #### 3. Polygon with Holes
 To create shapes with holes, use the `from_exteriors_interiors` factory. It accepts lists of polygons (shells and holes) and handles the data layout for you.
@@ -65,6 +67,7 @@ shape_with_hole = geometry.Polygon.from_exteriors_interiors(
     interiors=[inner_hole]
 )
 ```
+![Polygon with Holes](docs/images/usage_holes.png)
 
 #### 4. Disjoint Islands (Multi-Polygon)
 A single `Polygon` object can represent multiple disjoint areas (a "MultiPolygon" in other conventions) by simply having multiple exterior rings.
@@ -78,6 +81,7 @@ disjoint_shape = geometry.Polygon.from_exteriors_interiors(
     exteriors=[island1, island2]
 )
 ```
+![Disjoint Islands](docs/images/usage_disjoint.png)
 
 #### 5. Island in a Hole
 `dshape` supports complex nesting, such as an island inside a hole. Since the island represents positive area, it is treated as an **exterior** ring, even if it is geometrically inside a hole.
@@ -94,6 +98,7 @@ complex_shape = geometry.Polygon.from_exteriors_interiors(
     interiors=[hole]
 )
 ```
+![Island in a Hole](docs/images/usage_island_in_hole.png)
 
 
 ### Functional API
