@@ -225,6 +225,36 @@ class TestTopologySetOps(TestOpsBase):
         # Area should be 100 - 16 = 84
         assert jnp.abs(res.area - 84.0) < 1e-4
 
+    def test_island_in_hole(self):
+        # Reproduces the "Island in a Hole" issue
+        # p1: Inner circle (r=1)
+        # p2: Hole circle (r=2)
+        # p3: Outer circle (r=3)
+        p1 = geometry.Circle((0, 0), 1.0)
+        p2 = geometry.Circle((0, 0), 2.0)
+        p3 = geometry.Circle((0, 0), 3.0)
+
+        # p3 - p2 -> Annulus (2 to 3)
+        p3_minus_p2 = set_ops.difference(p3, p2)
+
+        # (p3 - p2) + p1 -> Annulus + Inner Island
+        p4 = set_ops.union([p3_minus_p2, p1])
+
+        expected_area = (jnp.pi * 3**2 - jnp.pi * 2**2) + jnp.pi * 1**2
+
+        assert jnp.abs(p4.area - expected_area) < 0.2
+
+        # Verify Topology
+        # Should have 3 rings (Outer, H ole, Island)
+        # Circle default edges = 32.
+        # p3 (32) + p2 (32) + p1 (32) = 96 vertices total (approx, assuming no extra clips)
+
+        valid_rings = p4.ring_counts[p4.ring_counts > 0]
+        assert len(valid_rings) == 3
+
+        # Check roughly 96 vertices (allow equal, logic preserves existing vertices if no intersection)
+        assert p4.count == 96
+
 
 if __name__ == "__main__":
     import sys

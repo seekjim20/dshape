@@ -41,32 +41,66 @@ def _clean_vertices(vertices, count):
     return new_verts, new_count
 
 
-def _is_point_in_polygon(point, vertices, count):
-    """Ray casting point-in-polygon test."""
-    # Simple crossing number algorithm
+def _get_ring_aware_next_index(i, ring_starts, ring_counts, num_rings):
+    """Returns the index of the next vertex in the same ring."""
+    # Find which ring 'i' belongs to
+    is_after = i >= ring_starts
+    k = jnp.sum(is_after) - 1
+    k = jnp.maximum(0, jnp.minimum(k, num_rings - 1))
+
+    s = ring_starts[k]
+    c = ring_counts[k]
+    local = i - s
+    safe_c = jnp.maximum(c, 1)
+    next_local = (local + 1) % safe_c
+    return s + next_local
+
+
+def _is_point_in_polygon_multiring(point, vertices, count, ring_counts):
+    """Ray casting point-in-polygon test supporting multiple rings (Even-Odd)."""
     x, y = point
 
+    if ring_counts is None:
+        ring_counts = jnp.array([count])
+
+    num_rings = ring_counts.shape[0]
+    starts = jnp.cumsum(jnp.pad(ring_counts, (1, 0))[:-1])
+
     indices = jnp.arange(vertices.shape[0])
-    next_indices = jnp.where(indices + 1 == count, 0, indices + 1)
+
+    # Calculate next indices respecting rings
+    next_indices = jax.vmap(
+        lambda i: _get_ring_aware_next_index(i, starts, ring_counts, num_rings)
+    )(indices)
 
     v1 = vertices[indices]
     v2 = vertices[next_indices]
 
-    # Check edge (v1, v2)
-    # Condition: (v1.y > y) != (v2.y > y) and x < ...
-
     cond1 = (v1[:, 1] > y) != (v2[:, 1] > y)
-
-    # Intersection x
-    # x_int = (v2.x - v1.x) * (y - v1.y) / (v2.y - v1.y) + v1.x
     slope = (v2[:, 0] - v1[:, 0]) / (v2[:, 1] - v1[:, 1] + 1e-9)
     x_int = slope * (y - v1[:, 1]) + v1[:, 0]
-
     cond2 = x < x_int
 
-    crossings = jnp.sum((cond1 & cond2) & (indices < count))
+    # Check validity:
+    # i < count checks if we are in valid vertex range.
+    # ALSO: Implicitly, if i is in a valid ring, then next_indices[i] is in same ring.
+    # But if ring_counts specifies fewer vertices than 'count', we might process garbage?
+    # Usually count == sum(ring_counts).
+    # But let's stick to i < count.
+
+    is_valid_edge = indices < count
+
+    crossings = jnp.sum((cond1 & cond2) & is_valid_edge)
 
     return (crossings % 2) == 1
+
+
+# Wraps old compatible signature for single ring usage if needed?
+# Or we just update usages.
+# Existing _is_point_in_polygon signature: (point, vertices, count)
+# We can make ring_counts optional.
+def _is_point_in_polygon(point, vertices, count, ring_counts=None):
+    return _is_point_in_polygon_multiring(point, vertices, count, ring_counts)
 
 
 def _line_intersection(p1, p2, p3, p4):
@@ -752,29 +786,47 @@ def _get_clipped_segments(
     return final_buf, final_count
 
 
-def _clip_segments(
+def _clip_segments_multiring(
     segments: ArrayLike,
     count: int,
     clip_verts: ArrayLike,
     clip_count: int,
+    clip_ring_counts: ArrayLike,
     max_out_segments: int,
     keep_inside: bool = True,
 ) -> tuple[Array, int]:
-    """Clips a set of segments against a polygon.
+    """Clips a set of segments against a multi-ring polygon.
 
     Args:
         segments: Input segments (N, 2, 2).
         count: Number of valid segments.
         clip_verts: Clip polygon vertices (M, 2).
         clip_count: Number of valid clip vertices.
+        clip_ring_counts: Ring counts for clip polygon.
         max_out_segments: Maximum number of output segments.
         keep_inside: If True, keep parts inside the clip polygon. Else outside.
 
     Returns:
         tuple: (output_segments, output_count)
     """
-    # 1. Expand segments by intersecting with clip edges
-    # 1. Expand segments by intersecting with clip edges
+    if clip_ring_counts is None:
+        clip_ring_counts = jnp.array([clip_count])
+
+    clip_num_rings = clip_ring_counts.shape[0]
+    clip_starts = jnp.cumsum(jnp.pad(clip_ring_counts, (1, 0))[:-1])
+
+    # Precompute clip indices map
+    # We iterate over all clip verts to find edges
+    clip_indices = jnp.arange(clip_verts.shape[0])
+
+    # Use helper to find next index for edge construction
+    clip_next_indices = jax.vmap(
+        lambda i: _get_ring_aware_next_index(
+            i, clip_starts, clip_ring_counts, clip_num_rings
+        )
+    )(clip_indices)
+
+    # OUTPUT BUFFER
     out_buf = jnp.zeros((max_out_segments, 2, 2))
     out_ptr = 0
 
@@ -786,59 +838,65 @@ def _clip_segments(
         p_start = seg[0]
         p_end = seg[1]
 
+        # Valid segment?
         is_valid_seg = i < count
 
         # Vector
         v_seg = p_end - p_start
         len_seg = jnp.linalg.norm(v_seg)
 
-        # Find intersections with clip edges
+        # 1. INTERSECTION FINDING
+        # We check against ALL edges of the clip polygon
         def get_intersection(j):
             c_idx1 = j
-            c_idx2 = jnp.where(j + 1 == clip_count, 0, j + 1)
+            c_idx2 = clip_next_indices[j]  # Use ring-aware next
+
             cp1 = clip_verts[c_idx1]
             cp2 = clip_verts[c_idx2]
 
             p_int = _line_intersection(p_start, p_end, cp1, cp2)
 
-            # Check on both segments
+            # Strict containment on input segment
             def on_seg_strict(p, a, b):
                 d = jnp.linalg.norm(a - b)
                 d1 = jnp.linalg.norm(a - p)
                 d2 = jnp.linalg.norm(p - b)
                 return jnp.abs(d1 + d2 - d) < 1e-6
 
+            # Valid if: Use both intersection checks + valid edge index j
             valid = on_seg_strict(p_int, p_start, p_end) & on_seg_strict(
                 p_int, cp1, cp2
             )
+            # Edge j is valid if j < clip_count
             valid = valid & (j < clip_count)
 
             dist = jnp.linalg.norm(p_int - p_start)
             return p_int, valid, dist
 
-        # Scan clip edges (limit 100)
-        scan_limit = 100
+        # Scan limit: Assume clip polygon fits in some bound or use clip_verts size.
+        # We can scan over all vertices in clip_verts buffer.
+        # Assuming max clip verts is e.g. 256 or derived from shape.
+        scan_limit = clip_verts.shape[0]
+
         ints, valids, dists = jax.vmap(get_intersection)(jnp.arange(scan_limit))
 
-        # Pack candidates: Start, End, Inte...
-        MAX_INT = 10
+        # 2. SORT INTERSECTIONS
+        MAX_INT = 16  # Increased capacity for complex clips
 
         cand_points = jnp.zeros((MAX_INT + 2, 2))
         cand_dists = jnp.zeros((MAX_INT + 2))
         cand_valids = jnp.zeros((MAX_INT + 2), dtype=bool)
 
-        # Set Start
+        # Start/End
         cand_points = cand_points.at[0].set(p_start)
         cand_dists = cand_dists.at[0].set(0.0)
         cand_valids = cand_valids.at[0].set(True)
 
-        # Set End
         cand_points = cand_points.at[1].set(p_end)
         cand_dists = cand_dists.at[1].set(len_seg)
         cand_valids = cand_valids.at[1].set(True)
 
-        # Fill intersections
-        # Sort indices of intersections by distance
+        # Top K intersections
         dists_masked = jnp.where(valids, dists, 1e9)
         perm = jnp.argsort(dists_masked)
 
@@ -846,57 +904,53 @@ def _clip_segments(
             idx = perm[k]
             return ints[idx], valids[idx], dists[idx]
 
-        # Take top MAX_INT intersections
         v_fill = jax.vmap(fill_int)(jnp.arange(MAX_INT))
 
         cand_points = cand_points.at[2:].set(v_fill[0])
         cand_valids = cand_valids.at[2:].set(v_fill[1])
         cand_dists = cand_dists.at[2:].set(v_fill[2])
 
-        # Now sort ALL candidates by distance
-        # Mask invalids to huge distance
+        # Sort all candidates by distance along segment
         sort_dists = jnp.where(cand_valids, cand_dists, 1e9)
         final_perm = jnp.argsort(sort_dists)
 
         sorted_points = cand_points[final_perm]
         sorted_valids = cand_valids[final_perm]
 
-        # Create sub-segments
-        # (p[k], p[k+1])
-        # Valid if valid[k] and valid[k+1] and distance < huge
-
-        # Capacity of sub-segments: MAX_INT + 1
-
+        # 3. GENERATE SUB-SEGMENTS & CHECK CONTAINMENT
         def check_subseg(k):
-            # sub-segment from k to k+1
+            # Segment k -> k+1
             sp1 = sorted_points[k]
             sp2 = sorted_points[k + 1]
 
+            # Valid if both points are valid and distance sensible
+            # And within count
             is_real = sorted_valids[k] & sorted_valids[k + 1] & (k < MAX_INT + 1)
-
-            # Additional check: sort_dists[k+1] should be < 1e8
             is_real = is_real & (sort_dists[k + 1] < 1e8)
 
-            # Check length > tiny
             slen = jnp.linalg.norm(sp2 - sp1)
             is_real = is_real & (slen > 1e-6)
 
+            # Midpoint Check
             mid = (sp1 + sp2) * 0.5
+
+            # Use normal offset for robustness?
+            # Midpoint is safer than offset if we trust Even-Odd.
+            # If line is ON edge, Even-Odd might be flaky?
+            # Let's nudge slightly.
             vec = sp2 - sp1
-            length = jnp.linalg.norm(vec)
-            length = jnp.where(length < 1e-9, 1.0, length)
-            # Outward normal (y, -x)
-            normal = jnp.array([vec[1], -vec[0]]) / length
+            nvec = jnp.array([vec[1], -vec[0]])
+            # Normalized
+            nvec = nvec / (slen + 1e-9)
 
-            test_p = mid + normal * 1e-5
+            # Test point
+            test_p = mid + nvec * 1e-5
 
-            # Containment check
-            # For robustness, use probe
-            # But line is exactly on boundary? No, crossing only at endpoints.
-            # Midpoint is strictly inside or outside usually.
+            # MULTI-RING CONTAINMENT CHECK
+            is_in = _is_point_in_polygon_multiring(
+                test_p, clip_verts, clip_count, clip_ring_counts
+            )
 
-            # Using 1e-6 check to match recent fixes
-            is_in = _is_point_in_polygon(test_p, clip_verts, clip_count)
             should_keep = is_in == keep_inside
 
             final_valid = is_real & should_keep & is_valid_seg
@@ -910,7 +964,6 @@ def _clip_segments(
             b, p = w_state
             ss = sub_segs[k]
             sv = sub_valids[k]
-
             b = b.at[p].set(jnp.where(sv, ss, b[p]))
             p = p + jnp.where(sv, 1, 0)
             return (b, p), None
@@ -924,6 +977,22 @@ def _clip_segments(
     )
 
     return final_buf, final_ptr
+
+
+# Keep old symbol for compatibility if needed, but we will likely replace usage.
+# Or redirect.
+def _clip_segments(
+    segments: ArrayLike,
+    count: int,
+    clip_verts: ArrayLike,
+    clip_count: int,
+    max_out_segments: int,
+    keep_inside: bool = True,
+) -> tuple[Array, int]:
+    # Redirect to multiring with default ring count
+    return _clip_segments_multiring(
+        segments, count, clip_verts, clip_count, None, max_out_segments, keep_inside
+    )
 
 
 def _check_edge_inversion_mask(input_verts, count, chunks, chunk_counts):

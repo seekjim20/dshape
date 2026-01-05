@@ -159,21 +159,26 @@ def union(
         # Determine next index
         def get_seg(i):
             # Find ring
+            # Using new helper from core or re-implementing inline?
+            # It's better to use core helper if possible, but it's not exposed in __init__ maybe?
+            # It's in core. Let's replicate logic or assume core exposed it.
+            # _get_ring_aware_next_index is in core.
+            idx_next = core._get_ring_aware_next_index(i, starts, rings, n_rings)
+
+            p1 = poly.vertices[i]
+            p2 = poly.vertices[idx_next]
+
+            # Simple validity check: i < c
+            # (And implicit valid ring structure)
+
+            # Find which ring i is in to check 'local < rc' if we want strictly
             is_after = i >= starts
             k = jnp.sum(is_after) - 1
             k = jnp.maximum(0, jnp.minimum(k, n_rings - 1))
-
-            s = starts[k]
             rc = rings[k]
+            s = starts[k]
             local = i - s
-            safe_rc = jnp.maximum(rc, 1)
-            next_local = (local + 1) % safe_rc
-            next_abs = s + next_local
 
-            p1 = poly.vertices[i]
-            p2 = poly.vertices[next_abs]
-
-            # Valid if i < c AND rc > 0 AND local < rc
             valid = (i < c) & (local < rc) & (rc > 0)
 
             return jnp.stack([p1, p2]), valid
@@ -202,50 +207,43 @@ def union(
             pack_s, (temp_buf, 0), jnp.arange(max_vertices)
         )
 
-        # Pad for clipping scan which can produce up to max_vertices * 2 segments
-        # We do this ONCE before clipping against all other polygons.
-        scan_capacity = max_vertices * 2
-        padded_segments = jnp.zeros((scan_capacity, 2, 2))
-        padded_segments = padded_segments.at[:max_vertices].set(
-            current_segments_compact
-        )
-        current_segments = padded_segments
+        current_segments = current_segments_compact
 
         # Iterate over other polygons to clip against
+        # GLOBAL CLIPPING: Subject must be OUTSIDE all other polygons.
+        # But for Union, is it (A - B) + (B - A) + (A & B)?
+        # Union = (A outside B) U (B outside A) ... wait.
+        # Union(A,B) = Parts of A outside B + Parts of B outside A?
+        # No.
+        # If A & B overlap, we want the "merged" shell.
+        # The boundary of Union(A, B) consists of:
+        # - Edges of A that are OUTSIDE B
+        # - Edges of B that are OUTSIDE A
+        # Yes.
+
+        # So for each polygon i, we keep edges that are OUTSIDE all polygons j != i.
+
         for j in range(num_polys):
             if i == j:
                 continue
 
             clipper = polygons[j]
-            c_rings = clipper.ring_counts
-            c_starts = jnp.cumsum(jnp.pad(c_rings, (1, 0))[:-1])
-            n_c_rings = c_rings.shape[0]
 
-            def clip_against_ring(state, r_idx):
-                segs, cnt = state
-                start = c_starts[r_idx]
-                rc = c_rings[r_idx]
+            # Clip against ENTIRE clipper polygon
+            # keep_inside = False (Keep Outside)
 
-                safe_rc = jnp.minimum(rc, max_vertices)
-                read_idxs = start + jnp.arange(max_vertices)
-                read_idxs = jnp.minimum(read_idxs, max_vertices - 1)
-
-                ring_verts = clipper.vertices[read_idxs]
-
-                run_clip = rc > 0
-                eff_cnt = jnp.where(run_clip, safe_rc, 0)
-
-                new_segs, new_cnt = core._clip_segments(
-                    segs, cnt, ring_verts, eff_cnt, max_vertices * 2, keep_inside=False
-                )
-
-                return (new_segs, new_cnt), None
-
-            (current_segments, current_count), _ = jax.lax.scan(
-                clip_against_ring,
-                (current_segments, current_count),
-                jnp.arange(n_c_rings),
+            new_segs, new_cnt = core._clip_segments_multiring(
+                current_segments,
+                current_count,
+                clipper.vertices,
+                clipper.count,
+                clipper.ring_counts,
+                max_vertices * 2,
+                keep_inside=False,
             )
+
+            current_segments = new_segs
+            current_count = new_cnt
 
         # Add accumulation
         def copy_step(state, k):
@@ -311,17 +309,17 @@ def difference(
         idxs = jnp.arange(max_vertices)
 
         def get_seg(i):
+            idx_next = core._get_ring_aware_next_index(i, starts, rings, n_rings)
+            p1 = poly.vertices[i]
+            p2 = poly.vertices[idx_next]
+
             is_after = i >= starts
             k = jnp.sum(is_after) - 1
             k = jnp.maximum(0, jnp.minimum(k, n_rings - 1))
-            s = starts[k]
             rc = rings[k]
+            s = starts[k]
             local = i - s
-            safe_rc = jnp.maximum(rc, 1)
-            next_local = (local + 1) % safe_rc
-            next_abs = s + next_local
-            p1 = poly.vertices[i]
-            p2 = poly.vertices[next_abs]
+
             valid = (i < c) & (local < rc) & (rc > 0)
             return jnp.stack([p1, p2]), valid
 
@@ -339,32 +337,26 @@ def difference(
 
     (seg1, count1), _ = jax.lax.scan(pack1, (buf1, 0), jnp.arange(max_vertices))
 
-    # Clip seg1 against ALL rings of P2 (Keep Outside)
-    p2_rings = polygon2.ring_counts
-    p2_starts = jnp.cumsum(jnp.pad(p2_rings, (1, 0))[:-1])
-    n_p2_rings = p2_rings.shape[0]
-
-    def clip_p1_step(state, r_idx):
-        segs, cnt = state
-        start = p2_starts[r_idx]
-        rc = p2_rings[r_idx]
-        safe_rc = jnp.minimum(rc, max_vertices)
-        read_idxs = start + jnp.arange(max_vertices)
-        read_idxs = jnp.minimum(read_idxs, max_vertices - 1)
-        ring_verts = polygon2.vertices[read_idxs]
-        run_clip = rc > 0
-        eff_cnt = jnp.where(run_clip, safe_rc, 0)
-
-        new_segs, new_cnt = core._clip_segments(
-            segs, cnt, ring_verts, eff_cnt, max_vertices, keep_inside=False
-        )
-        return (new_segs, new_cnt), None
-
-    (seg1, count1), _ = jax.lax.scan(
-        clip_p1_step, (seg1, count1), jnp.arange(n_p2_rings)
+    # 1. P1 clipped by P2 (Keep Outside)
+    # Global Clip against ALL of P2
+    seg1, count1 = core._clip_segments_multiring(
+        seg1,
+        count1,
+        polygon2.vertices,
+        polygon2.count,
+        polygon2.ring_counts,
+        max_vertices,
+        keep_inside=False,
     )
 
     # 2. P2 clipped by P1 (Keep Inside)
+    # The segments of P2 that are INSIDE P1 form the other part of the difference boundary?
+    # Difference(A, B) = Boundary(A - B)
+    # = Parts of A outside B + Parts of B inside A (reversed)
+    # Wait, B is a HOLE in the result.
+    # Yes, edges of B inside A need to be included (as hole edges).
+    # And they should be reversed.
+
     seg2_raw, valid2 = extract_edges(polygon2)
     buf2 = jnp.zeros_like(seg2_raw)
 
@@ -376,50 +368,18 @@ def difference(
 
     (seg2, count2), _ = jax.lax.scan(pack2, (buf2, 0), jnp.arange(max_vertices))
 
-    p1_rings = polygon1.ring_counts
-    p1_starts = jnp.cumsum(jnp.pad(p1_rings, (1, 0))[:-1])
-    n_p1_rings = p1_rings.shape[0]
-
-    def clip_p2_step(state, r_idx):
-        segs, cnt = state
-        start = p1_starts[r_idx]
-        rc = p1_rings[r_idx]
-        safe_rc = jnp.minimum(rc, max_vertices)
-        read_idxs = start + jnp.arange(max_vertices)
-        read_idxs = jnp.minimum(read_idxs, max_vertices - 1)
-        ring_verts = polygon1.vertices[read_idxs]
-
-        # Calculate signed area to decide orientation
-        # Use simple masking to avoid dynamic slicing
-        idxs = jnp.arange(max_vertices)
-        valid = idxs < safe_rc
-
-        x = ring_verts[:, 0]
-        y = ring_verts[:, 1]
-
-        # Wrap index based on count
-        next_idxs = (idxs + 1) % jnp.maximum(safe_rc, 1)
-
-        x_next = x[next_idxs]
-        y_next = y[next_idxs]
-
-        area = 0.5 * jnp.sum((x * y_next - x_next * y) * valid)
-        is_pos = area > 0
-        target_keep = is_pos
-
-        run_clip = rc > 0
-        eff_cnt = jnp.where(run_clip, safe_rc, 0)
-
-        new_segs, new_cnt = core._clip_segments(
-            segs, cnt, ring_verts, eff_cnt, max_vertices, keep_inside=target_keep
-        )
-        return (new_segs, new_cnt), None
-
-    (seg2, count2), _ = jax.lax.scan(
-        clip_p2_step, (seg2, count2), jnp.arange(n_p1_rings)
+    # Clip P2 against P1 (Keep INSIDE P1)
+    seg2, count2 = core._clip_segments_multiring(
+        seg2,
+        count2,
+        polygon1.vertices,
+        polygon1.count,
+        polygon1.ring_counts,
+        max_vertices,
+        keep_inside=True,
     )
 
-    # Reverse P2 segments
+    # Reverse P2 segments (Hole orientation)
     seg2 = seg2[:, ::-1, :]
 
     capacity = max_vertices * 2
