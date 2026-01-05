@@ -119,7 +119,7 @@ class TestUnion(TestOpsBase):
 
         # Offset (Shift essentially, as it's offset of buffer)
         # Actually offset logic expands if edges are sharp, but for buffer result (smooth/arcs), it shifts/expands.
-        p3 = mutation.offset(p2, (0.05, 0.0))
+        p3 = mutation.translate(p2, (0.05, 0.0))
 
         p4 = set_ops.union([p2, p3])
 

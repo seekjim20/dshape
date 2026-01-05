@@ -245,7 +245,7 @@ def buffer(
     )
 
 
-def offset(polygon: geometry.Polygon, dxy: ArrayLike) -> geometry.Polygon:
+def translate(polygon: geometry.Polygon, dxy: ArrayLike) -> geometry.Polygon:
     """Translates the polygon by (dx, dy).
 
     Args:

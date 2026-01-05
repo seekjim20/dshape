@@ -34,7 +34,7 @@ geometry.Polygon.__mul__ = _mul
 
 geometry.Polygon.convex_hull = property(constructive.convex_hull)
 geometry.Polygon.buffer = mutation.buffer
-geometry.Polygon.offset = mutation.offset
+geometry.Polygon.translate = mutation.translate
 geometry.Polygon.rotate = mutation.rotate
 geometry.Polygon.scale = mutation.scale
 
@@ -44,7 +44,7 @@ __all__ = [
     "set_ops.union",
     "set_ops.difference",
     "mutation.buffer",
-    "mutation.offset",
+    "mutation.translate",
     "mutation.rotate",
     "mutation.scale",
     "constructive.convex_hull",

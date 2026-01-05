@@ -250,9 +250,9 @@ class TestOperators:
 
 
 class TestMutationShortcuts:
-    def test_offset_shortcut(self):
+    def test_translate_shortcut(self):
         p = geometry.Rectangle(0, 0, 1, 1)  # Area 1, Center (0.5, 0.5)
-        p_moved = p.offset((1.0, 1.0))  # Center (1.5, 1.5)
+        p_moved = p.translate((1.0, 1.0))  # Center (1.5, 1.5)
 
         assert jnp.abs(p_moved.area - 1.0) < 1e-5
         # Check first vertex (0,0) -> (1,1)
