@@ -20,15 +20,7 @@
 
 ## Usage
 
-### Polygon Definition
-
-In `dshape`, a `Polygon` is the fundamental geometric primitive. It represents a 2D shape defined by one or more closed rings of vertices.
-- **Exterior Rings** (Shells): Defined in Counter-Clockwise (CCW) order. Represent positive area.
-- **Interior Rings** (Holes): Defined in Clockwise (CW) order. Represent negative area.
-
-A `Polygon` object is a JAX PyTree, meaning it can be passed into JIT-compiled functions. It stores vertices in a flat `(N, 2)` array and tracks topology via `ring_counts`.
-
-#### 1. Line Segment
+### Line Segment
 A `LineSegment` represents a line defined by two endpoints. It is a JAX PyTree and supports properties for `length`, `midpoint`, and `direction`.
 
 ```python
@@ -41,7 +33,15 @@ print(seg.direction)  # [0.6, 0.8] (unit vector)
 ```
 ![LineSegment](docs/images/usage_line_segment.png)
 
-#### 2. Simple Polygon
+### Polygon
+
+In `dshape`, a `Polygon` is the fundamental geometric primitive. It represents a 2D shape defined by one or more closed rings of vertices.
+- **Exterior Rings** (Shells): Defined in Counter-Clockwise (CCW) order. Represent positive area.
+- **Interior Rings** (Holes): Defined in Clockwise (CW) order. Represent negative area.
+
+A `Polygon` object is a JAX PyTree, meaning it can be passed into JIT-compiled functions. It stores vertices in a flat `(N, 2)` array and tracks topology via `ring_counts`.
+
+#### Simple Polygon
 You can define a simple polygon by providing a list of vertices.
 
 ```python
@@ -54,7 +54,7 @@ triangle = geometry.Polygon(vertices=vertices, count=3)
 ```
 ![Simple Polygon](docs/images/usage_simple_poly.png)
 
-#### 3. Primitives (Shorthand)
+#### Primitives (Shorthand)
 `dshape` provides helper classes for common shapes.
 
 ```python
@@ -67,7 +67,7 @@ circle = geometry.Circle((0., 0.), 2.0, num_edges=64)
 ```
 ![Primitives](docs/images/usage_primitives.png)
 
-#### 4. Polygon with Holes
+#### Polygon with Holes
 To create shapes with holes, use the `from_exteriors_interiors` factory. It accepts lists of polygons (shells and holes) and handles the data layout for you.
 
 ```python
@@ -82,7 +82,7 @@ shape_with_hole = geometry.Polygon.from_exteriors_interiors(
 ```
 ![Polygon with Holes](docs/images/usage_holes.png)
 
-#### 5. Disjoint Islands (Multi-Polygon)
+#### Disjoint Islands (Multi-Polygon)
 A single `Polygon` object can represent multiple disjoint areas (a "MultiPolygon" in other conventions) by simply having multiple exterior rings.
 
 ```python
@@ -96,7 +96,7 @@ disjoint_shape = geometry.Polygon.from_exteriors_interiors(
 ```
 ![Disjoint Islands](docs/images/usage_disjoint.png)
 
-#### 6. Island in a Hole
+#### Island in a Hole
 `dshape` supports complex nesting, such as an island inside a hole. Since the island represents positive area, it is treated as an **exterior** ring, even if it is geometrically inside a hole.
 
 ```python
@@ -112,7 +112,6 @@ complex_shape = geometry.Polygon.from_exteriors_interiors(
 )
 ```
 ![Island in a Hole](docs/images/usage_island_in_hole.png)
-
 
 ### Functional API
 
