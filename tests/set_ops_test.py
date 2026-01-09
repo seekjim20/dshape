@@ -69,6 +69,121 @@ class TestIntersection(TestOpsBase):
         # Count can be low if clamping removed intersecting geometry
         assert res.count <= 2
 
+    def test_parallel_no_intersection(self):
+        """Parallel segments should return None."""
+        seg1 = geometry.LineSegment([0.0, 0.0], [2.0, 0.0])
+        seg2 = geometry.LineSegment([0.0, 1.0], [2.0, 1.0])
+
+        result = set_ops.line_segment_intersection(seg1, seg2)
+        assert result is None
+
+    def test_perpendicular_intersection(self):
+        """Crossing segments should return the intersection Point."""
+        seg1 = geometry.LineSegment([0.0, 0.0], [2.0, 2.0])
+        seg2 = geometry.LineSegment([0.0, 2.0], [2.0, 0.0])
+
+        result = set_ops.line_segment_intersection(seg1, seg2)
+        assert result is not None
+        assert isinstance(result, geometry.Point)
+        assert jnp.allclose(result.xy, jnp.array([1.0, 1.0]), atol=1e-6)
+
+    def test_t_intersection(self):
+        """One segment touches the other at an endpoint."""
+        seg1 = geometry.LineSegment([0.0, 0.0], [2.0, 0.0])
+        seg2 = geometry.LineSegment([1.0, 0.0], [1.0, 2.0])
+
+        result = set_ops.line_segment_intersection(seg1, seg2)
+        assert result is not None
+        assert jnp.allclose(result.xy, jnp.array([1.0, 0.0]), atol=1e-6)
+
+    def test_collinear_no_intersection(self):
+        """Collinear but disjoint segments should return None."""
+        seg1 = geometry.LineSegment([0.0, 0.0], [1.0, 0.0])
+        seg2 = geometry.LineSegment([2.0, 0.0], [3.0, 0.0])
+
+        result = set_ops.line_segment_intersection(seg1, seg2)
+        assert result is None
+
+    def test_collinear_overlapping_returns_none(self):
+        """Collinear overlapping segments should return None (documented behavior)."""
+        seg1 = geometry.LineSegment([0.0, 0.0], [2.0, 0.0])
+        seg2 = geometry.LineSegment([1.0, 0.0], [3.0, 0.0])
+
+        result = set_ops.line_segment_intersection(seg1, seg2)
+        # Returns None because it's collinear (cross product is 0)
+        assert result is None
+
+    def test_method_shortcut(self):
+        """Test the monkey-patched intersection method."""
+        seg1 = geometry.LineSegment([0.0, 0.0], [2.0, 2.0])
+        seg2 = geometry.LineSegment([0.0, 2.0], [2.0, 0.0])
+
+        result = seg1.intersection(seg2)
+        assert result is not None
+        assert jnp.allclose(result.xy, jnp.array([1.0, 1.0]), atol=1e-6)
+
+    def test_polygon_intersection_single(self):
+        """Segment crosses polygon once, returning one segment."""
+        # Segment from outside to inside the square
+        seg = geometry.LineSegment([-1.0, 0.5], [0.5, 0.5])
+        poly = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+
+        result = set_ops.line_segment_polygon_intersection(seg, poly)
+        assert len(result) == 1
+        # The segment inside should be from (0, 0.5) to (0.5, 0.5)
+        assert jnp.allclose(result[0].p1, jnp.array([0.0, 0.5]), atol=1e-5)
+        assert jnp.allclose(result[0].p2, jnp.array([0.5, 0.5]), atol=1e-5)
+
+    def test_polygon_intersection_through(self):
+        """Segment passes through polygon, one segment result."""
+        seg = geometry.LineSegment([-1.0, 0.5], [2.0, 0.5])
+        poly = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+
+        result = set_ops.line_segment_polygon_intersection(seg, poly)
+        assert len(result) == 1
+        assert jnp.allclose(result[0].p1, jnp.array([0.0, 0.5]), atol=1e-5)
+        assert jnp.allclose(result[0].p2, jnp.array([1.0, 0.5]), atol=1e-5)
+
+    def test_polygon_intersection_fully_inside(self):
+        """Segment fully inside polygon returns itself."""
+        seg = geometry.LineSegment([0.25, 0.5], [0.75, 0.5])
+        poly = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+
+        result = set_ops.line_segment_polygon_intersection(seg, poly)
+        assert len(result) == 1
+        assert jnp.allclose(result[0].p1, jnp.array([0.25, 0.5]), atol=1e-5)
+        assert jnp.allclose(result[0].p2, jnp.array([0.75, 0.5]), atol=1e-5)
+
+    def test_polygon_intersection_fully_outside(self):
+        """Segment fully outside polygon returns empty list."""
+        seg = geometry.LineSegment([2.0, 0.5], [3.0, 0.5])
+        poly = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+
+        result = set_ops.line_segment_polygon_intersection(seg, poly)
+        assert len(result) == 0
+
+    def test_polygon_intersection_with_hole(self):
+        """Segment crossing polygon with hole returns multiple segments."""
+        # Polygon with a hole in the middle
+        outer = geometry.Rectangle(0.0, 0.0, 4.0, 4.0)
+        hole = geometry.Rectangle(1.0, 1.0, 2.0, 2.0)
+        poly_with_hole = geometry.Polygon.from_exteriors_interiors([outer], [hole])
+
+        # Segment passes through outer, hole, outer
+        seg = geometry.LineSegment([0.0, 2.0], [4.0, 2.0])
+
+        result = set_ops.line_segment_polygon_intersection(seg, poly_with_hole)
+        # Should have 2 segments (before hole and after hole)
+        assert len(result) == 2
+
+    def test_method_with_polygon(self):
+        """Test the monkey-patched intersection method with Polygon."""
+        seg = geometry.LineSegment([-1.0, 0.5], [2.0, 0.5])
+        poly = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+
+        result = seg.intersection(poly)
+        assert len(result) == 1
+
 
 class TestUnion(TestOpsBase):
     def test_union_convex_case(self):

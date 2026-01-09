@@ -38,11 +38,31 @@ geometry.Polygon.translate = mutation.translate
 geometry.Polygon.rotate = mutation.rotate
 geometry.Polygon.scale = mutation.scale
 
+
+# -- Monkey Patching Methods to LineSegment --
+
+
+def _line_segment_intersection_method(self, other):
+    """Intersection with another LineSegment or Polygon."""
+    if isinstance(other, geometry.LineSegment):
+        return set_ops.line_segment_intersection(self, other)
+    elif isinstance(other, geometry.Polygon):
+        return set_ops.line_segment_polygon_intersection(self, other)
+    else:
+        raise TypeError(f"Cannot compute intersection with {type(other).__name__}")
+
+
+geometry.LineSegment.intersection = _line_segment_intersection_method
+
 __all__ = [
     "geometry.Polygon",
+    "geometry.LineSegment",
+    "geometry.Point",
     "set_ops.intersection",
     "set_ops.union",
     "set_ops.difference",
+    "set_ops.line_segment_intersection",
+    "set_ops.line_segment_polygon_intersection",
     "mutation.buffer",
     "mutation.translate",
     "mutation.rotate",

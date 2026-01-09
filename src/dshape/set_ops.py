@@ -403,3 +403,142 @@ def difference(
     return geometry.Polygon(
         vertices=vertices, count=safe_count, ring_counts=final_rings, overflow=overflow
     )
+
+
+def line_segment_intersection(
+    segment1: geometry.LineSegment,
+    segment2: geometry.LineSegment,
+) -> geometry.Point | None:
+    """Computes the intersection of two line segments.
+
+    Args:
+        segment1: First line segment.
+        segment2: Second line segment.
+
+    Returns:
+        A Point if the segments intersect at exactly one point.
+        None if the segments do not intersect (parallel, collinear, or disjoint).
+
+    Note:
+        Collinear overlapping segments return None. This function only detects
+        point intersections, not segment overlaps.
+    """
+    p1, p2 = segment1.p1, segment1.p2
+    p3, p4 = segment2.p1, segment2.p2
+
+    # Direction vectors
+    d1 = p2 - p1
+    d2 = p4 - p3
+
+    # Cross product of directions (2D)
+    cross = d1[0] * d2[1] - d1[1] * d2[0]
+
+    # Check for parallel lines
+    if jnp.abs(cross) < 1e-9:
+        return None
+
+    # Compute parameters t and u
+    # p1 + t * d1 = p3 + u * d2
+    # (p3 - p1) = t * d1 - u * d2
+    diff = p3 - p1
+    t = (diff[0] * d2[1] - diff[1] * d2[0]) / cross
+    u = (diff[0] * d1[1] - diff[1] * d1[0]) / cross
+
+    # Check if intersection is within both segments [0, 1]
+    if t < -1e-9 or t > 1.0 + 1e-9:
+        return None
+    if u < -1e-9 or u > 1.0 + 1e-9:
+        return None
+
+    # Compute intersection point
+    intersection_point = p1 + t * d1
+
+    return geometry.Point(intersection_point)
+
+
+def line_segment_polygon_intersection(
+    segment: geometry.LineSegment,
+    polygon: geometry.Polygon,
+) -> list[geometry.LineSegment]:
+    """Computes the intersection of a line segment with a polygon.
+
+    Args:
+        segment: The line segment to intersect.
+        polygon: The polygon to intersect with.
+
+    Returns:
+        A list of LineSegments that lie inside the polygon.
+        Returns an empty list if no part of the segment is inside the polygon.
+    """
+    import numpy as np
+
+    p1 = np.array(segment.p1)
+    p2 = np.array(segment.p2)
+
+    # Collect all intersection points with polygon edges
+    t_values = []  # Parametric values along segment
+
+    vertices = np.array(polygon.vertices)
+    ring_counts = np.array(polygon.ring_counts)
+
+    start = 0
+    for rc in ring_counts:
+        if rc <= 0:
+            break
+
+        for i in range(int(rc)):
+            # Polygon edge
+            q1 = vertices[start + i]
+            q2 = vertices[start + (i + 1) % int(rc)]
+
+            # Compute intersection
+            d1 = p2 - p1
+            d2 = q2 - q1
+
+            cross = d1[0] * d2[1] - d1[1] * d2[0]
+
+            if np.abs(cross) < 1e-9:
+                continue  # Parallel
+
+            diff = q1 - p1
+            t = (diff[0] * d2[1] - diff[1] * d2[0]) / cross
+            u = (diff[0] * d1[1] - diff[1] * d1[0]) / cross
+
+            # Check if within both segments
+            if -1e-9 <= t <= 1.0 + 1e-9 and -1e-9 <= u <= 1.0 + 1e-9:
+                t_values.append(float(np.clip(t, 0.0, 1.0)))
+
+        start += int(rc)
+
+    # Add endpoints
+    t_values.extend([0.0, 1.0])
+
+    # Remove duplicates and sort
+    t_values = sorted(set(t_values))
+
+    # Check each sub-segment
+    result = []
+    for i in range(len(t_values) - 1):
+        t_start = t_values[i]
+        t_end = t_values[i + 1]
+
+        if t_end - t_start < 1e-9:
+            continue
+
+        # Midpoint
+        t_mid = (t_start + t_end) / 2
+        mid = p1 + t_mid * (p2 - p1)
+
+        # Check if midpoint is inside polygon
+        is_inside = core._is_point_in_polygon(
+            jnp.array(mid), polygon.vertices, polygon.count, polygon.ring_counts
+        )
+
+        if is_inside:
+            seg_start = p1 + t_start * (p2 - p1)
+            seg_end = p1 + t_end * (p2 - p1)
+            result.append(
+                geometry.LineSegment(jnp.array(seg_start), jnp.array(seg_end))
+            )
+
+    return result
