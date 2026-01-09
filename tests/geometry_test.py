@@ -54,6 +54,93 @@ class TestLineSegment:
         res = f(seg)
         assert jnp.allclose(res, jnp.array([2.0, 2.0]))
 
+        assert jnp.allclose(res, jnp.array([2.0, 2.0]))
+
+
+class TestPolygonContains:
+    """Tests for Polygon.contains(point) functionality."""
+
+    def test_simple_containment(self):
+        """Test point containment in a simple polygon."""
+        poly = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
+
+        # Test point inside
+        p_in = geometry.Point([1.0, 1.0])
+        assert poly.contains(p_in)
+
+        # Test point outside
+        p_out = geometry.Point([3.0, 3.0])
+        assert not poly.contains(p_out)
+
+    def test_containment_array_input(self):
+        """Test containment with raw array input."""
+        poly = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
+        assert poly.contains([1.0, 1.0])
+        assert not poly.contains([3.0, 3.0])
+
+    def test_hole_containment(self):
+        """Test point containment with a hole."""
+        # Outer: 4x4 square at (0,0) -> (-2,-2) to (2,2) ? No, Rectangle(x,y,w,h)
+        # Rect(0,0,4,4) -> (0,0) to (4,4)
+        outer = geometry.Rectangle(0.0, 0.0, 4.0, 4.0)
+        # Hole: 2x2 square at (1,1) -> (1,1) to (3,3)
+        hole = geometry.Rectangle(1.0, 1.0, 2.0, 2.0)
+
+        poly = geometry.Polygon.from_exteriors_interiors([outer], [hole])
+
+        # Test point in the "meat" of the polygon
+        p_meat = geometry.Point([0.5, 0.5])
+        assert poly.contains(p_meat)
+
+        # Test point in the hole (should be False)
+        p_hole = geometry.Point([2.0, 2.0])
+        assert not poly.contains(p_hole)
+
+        # Test point outside outer boundary
+        p_out = geometry.Point([5.0, 5.0])
+        assert not poly.contains(p_out)
+
+    def test_island_containment(self):
+        """Test point in an island inside a hole (Even-Odd rule)."""
+        # Outer: Circle r=3
+        p3 = geometry.Circle((0, 0), 3.0)
+        # Hole: Circle r=2
+        p2 = geometry.Circle((0, 0), 2.0)
+        # Island: Circle r=1 (This is a union of (p3-p2) and p1)
+        # But from_exteriors_interiors takes list of exteriors and interiors.
+        # If we just pass multiple rings, how are they interpreted?
+        # Even-Odd rule handles nested rings automatically regardless of explicit "hole" labeling,
+        # providing they are properly oriented or just structurally nested.
+        # Let's use set_ops to robustly construct an island polygon.
+
+        try:
+            from dshape import set_ops
+        except ImportError:
+            import sys
+
+            # Skip if set_ops not available (though it should be)
+            pass
+
+        p1 = geometry.Circle((0, 0), 1.0)
+        # Annulus p3 - p2
+        annulus = set_ops.difference(p3, p2)
+        # Island p1 + annulus
+        poly_island = set_ops.union([annulus, p1])
+
+        # Check point in island (r < 1) -> True
+        assert poly_island.contains([0.0, 0.0])
+
+        # Check point in "moat" (1 < r < 2) -> False
+        # r=1.5
+        assert not poly_island.contains([1.5, 0.0])
+
+        # Check point in outer land (2 < r < 3) -> True
+        # r=2.5
+        assert poly_island.contains([2.5, 0.0])
+
+        # Check point completely outside (r > 3) -> False
+        assert not poly_island.contains([4.0, 0.0])
+
 
 class TestPolygon:
     def create_L_shape(self, origin_x=0.0, origin_y=0.0):

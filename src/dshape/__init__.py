@@ -39,6 +39,27 @@ geometry.Polygon.rotate = mutation.rotate
 geometry.Polygon.scale = mutation.scale
 
 
+def _contains(self, point):
+    """Checks if the polygon contains the given point."""
+    # Ensure point is a Point object or array-like
+    if hasattr(point, "xy"):
+        pt_arr = point.xy
+    else:
+        # Assuming array-like
+        from jax import numpy as jnp
+
+        pt_arr = jnp.asarray(point)
+
+    from . import core
+
+    return core._is_point_in_polygon(
+        pt_arr, self.vertices, self.count, self.ring_counts
+    )
+
+
+geometry.Polygon.contains = _contains
+
+
 # -- Monkey Patching Methods to LineSegment --
 
 

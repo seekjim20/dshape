@@ -530,11 +530,7 @@ def line_segment_polygon_intersection(
         mid = p1 + t_mid * (p2 - p1)
 
         # Check if midpoint is inside polygon
-        is_inside = core._is_point_in_polygon(
-            jnp.array(mid), polygon.vertices, polygon.count, polygon.ring_counts
-        )
-
-        if is_inside:
+        if polygon.contains(mid):
             seg_start = p1 + t_start * (p2 - p1)
             seg_end = p1 + t_end * (p2 - p1)
             result.append(
