@@ -9,8 +9,17 @@ from jax import Array
 from jax.typing import ArrayLike
 
 
-def _clean_vertices(vertices, count):
-    """Removes consecutive duplicate vertices."""
+def _clean_vertices(vertices: ArrayLike, count: int) -> tuple[Array, int]:
+    """Removes consecutive duplicate vertices to clean up polygon geometry.
+
+    Args:
+        vertices: Array of shape (N, 2) containing vertex coordinates.
+        count: The number of valid vertices in the array.
+
+    Returns:
+        A tuple (new_vertices, new_count) where duplicates are removed and
+        remaining vertices are packed at the beginning of the array.
+    """
     # Mask valid vertices
     mask = jnp.arange(vertices.shape[0]) < count
 
@@ -41,8 +50,20 @@ def _clean_vertices(vertices, count):
     return new_verts, new_count
 
 
-def _get_ring_aware_next_index(i, ring_starts, ring_counts, num_rings):
-    """Returns the index of the next vertex in the same ring."""
+def _get_ring_aware_next_index(
+    i: int, ring_starts: ArrayLike, ring_counts: ArrayLike, num_rings: int
+) -> int:
+    """Returns the index of the next vertex in the same ring, handling wrapping.
+
+    Args:
+        i: Current vertex index (global).
+        ring_starts: Array of start indices for each ring.
+        ring_counts: Array of vertex counts for each ring.
+        num_rings: Total number of rings.
+
+    Returns:
+        The global index of the next vertex in the corresponding ring.
+    """
     # Find which ring 'i' belongs to
     is_after = i >= ring_starts
     k = jnp.sum(is_after) - 1
@@ -56,8 +77,23 @@ def _get_ring_aware_next_index(i, ring_starts, ring_counts, num_rings):
     return s + next_local
 
 
-def _is_point_in_polygon_multiring(point, vertices, count, ring_counts):
-    """Ray casting point-in-polygon test supporting multiple rings (Even-Odd)."""
+def _is_point_in_polygon_multiring(
+    point: ArrayLike,
+    vertices: ArrayLike,
+    count: int,
+    ring_counts: ArrayLike | None = None,
+) -> bool:
+    """Ray casting point-in-polygon test supporting multiple rings (Even-Odd rule).
+
+    Args:
+        point: The (x, y) coordinates of the test point.
+        vertices: Array of shape (N, 2) containing polygon vertices.
+        count: Total number of valid vertices.
+        ring_counts: Optional array of vertex counts per ring. If None, assumes single ring.
+
+    Returns:
+        True if the point is inside the polygon (or odd number of ring crossings), False otherwise.
+    """
     x, y = point
 
     if ring_counts is None:
@@ -81,13 +117,7 @@ def _is_point_in_polygon_multiring(point, vertices, count, ring_counts):
     x_int = slope * (y - v1[:, 1]) + v1[:, 0]
     cond2 = x < x_int
 
-    # Check validity:
-    # i < count checks if we are in valid vertex range.
-    # ALSO: Implicitly, if i is in a valid ring, then next_indices[i] is in same ring.
-    # But if ring_counts specifies fewer vertices than 'count', we might process garbage?
-    # Usually count == sum(ring_counts).
-    # But let's stick to i < count.
-
+    # Check validity: 'i < count' checks if we are in valid vertex range.
     is_valid_edge = indices < count
 
     crossings = jnp.sum((cond1 & cond2) & is_valid_edge)
@@ -95,16 +125,32 @@ def _is_point_in_polygon_multiring(point, vertices, count, ring_counts):
     return (crossings % 2) == 1
 
 
-# Wraps old compatible signature for single ring usage if needed?
-# Or we just update usages.
-# Existing _is_point_in_polygon signature: (point, vertices, count)
-# We can make ring_counts optional.
-def _is_point_in_polygon(point, vertices, count, ring_counts=None):
+def _is_point_in_polygon(
+    point: ArrayLike,
+    vertices: ArrayLike,
+    count: int,
+    ring_counts: ArrayLike | None = None,
+) -> bool:
+    """Wrapper for point-in-polygon test, supporting both single and multi-ring polygons."""
     return _is_point_in_polygon_multiring(point, vertices, count, ring_counts)
 
 
-def _line_intersection(p1, p2, p3, p4):
-    """Computes intersection of line segments p1-p2 and p3-p4."""
+def _line_intersection(
+    p1: ArrayLike, p2: ArrayLike, p3: ArrayLike, p4: ArrayLike
+) -> Array:
+    """Computes the intersection point of line segments defined by p1-p2 and p3-p4.
+
+    Args:
+        p1: Start point of first segment.
+        p2: End point of first segment.
+        p3: Start point of second segment.
+        p4: End point of second segment.
+
+    Returns:
+        Array of shape (2,) containing the intersection point coordinates.
+        Note: This function assumes the lines intersect. Parallel lines may result in Inf/NaN
+        or division by small number handling.
+    """
     x1, y1 = p1
     x2, y2 = p2
     x3, y3 = p3
@@ -123,30 +169,35 @@ def _line_intersection(p1, p2, p3, p4):
     return jnp.append(jnp.atleast_1d(x), jnp.atleast_1d(y))
 
 
-def _is_inside(p, cp1, cp2):
-    """Checks if point p is inside the half-plane defined by edge cp1->cp2 (Left side)."""
+def _is_inside(p: ArrayLike, cp1: ArrayLike, cp2: ArrayLike) -> bool:
+    """Checks if point p is strictly inside the half-plane defined by edge cp1->cp2 (Left side).
+
+    Args:
+        p: Test point.
+        cp1: Start point of edge.
+        cp2: End point of edge.
+
+    Returns:
+        True if p is to the left of or on the line from cp1 to cp2.
+    """
     return (cp2[0] - cp1[0]) * (p[1] - cp1[1]) - (cp2[1] - cp1[1]) * (
         p[0] - cp1[0]
     ) >= 0
 
 
 def _remove_duplicate_segments(segments: ArrayLike, count: int) -> tuple[Array, int]:
-    """Removes duplicate segments from the list.
+    """Removes duplicate segments from the list (keeping the first occurrence).
 
     Args:
-        segments: (N, 2, 2) array of segments.
-        count: current valid count.
+        segments: Array of shape (N, 2, 2) containing segments (start, end).
+        count: The number of valid segments.
 
     Returns:
-        (filtered_segments, new_count)
+        A tuple (unique_segments, new_count).
     """
     N = segments.shape[0]
 
-    # We want to mask out duplicates.
-    # Keep the first occurrence.
     # Mask[i] = True if unique.
-
-    # O(N^2) comparison.
     indices = jnp.arange(N)
 
     def check_is_duplicate(i):
@@ -193,25 +244,22 @@ def _remove_duplicate_segments(segments: ArrayLike, count: int) -> tuple[Array, 
 def _extract_edges(
     vertices: ArrayLike, count: int, ring_counts: ArrayLike, max_out: int
 ) -> tuple[Array, int]:
-    """Extracts segments from vertices."""
-    # (N, 2, 2)
-    # Iterate rings.
+    """Extracts line segments from polygon vertices, respecting rings.
 
+    Args:
+        vertices: Array of shape (N, 2) containing polygon vertices.
+        count: Number of valid vertices.
+        ring_counts: Array of vertex counts per ring.
+        max_out: Maximum number of segments in output.
+
+    Returns:
+        A tuple (segments, segment_count). Segments have shape (max_out, 2, 2).
+    """
     # Precompute starts
     # Pad rcs for safety (though it's usually fixed size)
     rcs = ring_counts
     starts = jnp.cumsum(jnp.pad(rcs, (1, 0))[:-1])
     num_rings = rcs.shape[0]
-
-    # We want to generate indices for each segment.
-    # Total segments = sum(ring_counts).
-    # Vertices buffer is N.
-    # We can just iterate all vertices i < count.
-    # For each i, find next vertex j.
-    # If i is last in ring, j is start of ring.
-
-    # Find which ring i belongs to.
-    # Binary search or just scan starts? num_rings is small (16).
 
     def get_seg_indices(i):
         # Only valid if i < count
@@ -229,11 +277,6 @@ def _extract_edges(
 
         # Local index
         local = i - s
-
-        # Check if i is actually in valid range of this ring
-        # If ring is empty/invalid, rc=0.
-        # But i < count ensures we are in *some* valid data range, assuming packed?
-        # Yes, vertices are packed.
 
         # Next index
         safe_rc = jnp.maximum(rc, 1)
@@ -266,9 +309,12 @@ def _stitch_segments(
     count: int,
     max_v: int,
     max_rings: int = 16,
-    seg_inverted_mask: ArrayLike = None,
+    seg_inverted_mask: ArrayLike | None = None,
 ) -> tuple[Array, int, Array]:
-    """Stitches segments into multiple continuous polygon rings.
+    """Stitches independent segments into multiple continuous polygon rings.
+
+    This function traverses segments to reconstruct closed loops (rings).
+    It also filters out ghost rings if `seg_inverted_mask` indicates they are mostly inverted.
 
     Args:
         segments: Array of shape (N, 2, 2) containing line segments (start, end).
@@ -276,7 +322,7 @@ def _stitch_segments(
         max_v: Maximum number of vertices in the output.
         max_rings: Maximum number of rings to detect.
         seg_inverted_mask: Optional boolean mask (N,) indicating inverted segments.
-                           Rings with >50% inverted segments are discarded (Ghost Rings).
+                           Rings with >50% inverted segments are discarded.
 
     Returns:
         A tuple (vertices, vertex_count, ring_counts).
@@ -1172,6 +1218,19 @@ def _buffer(
     max_vertices: int,
     resolution: int = 60,
 ) -> tuple[Array, int, Array]:
+    """Computes the buffer (offset) of a polygon.
+
+    Args:
+        vertices: Polygon vertices (N, 2).
+        count: Number of valid vertices.
+        ring_counts: Array of vertex counts per ring.
+        distance: Buffer distance (positive for dilation, negative for erosion).
+        max_vertices: Maximum vertices in the output buffer.
+        resolution: Number of segments for arc approximation at corners.
+
+    Returns:
+        A tuple (buffered_vertices, valid_count, ring_counts, overflow_flag).
+    """
 
     # Handle optional ring_counts
     if ring_counts is None:
@@ -1351,34 +1410,6 @@ def _buffer(
     overflow = stop_overflow | seg_overflow
 
     return vertices, count, out_ring_counts, overflow
-
-
-def _generate_offset_chunks(vertices, indices, count, max_vertices, distance):
-    """Helper to generate offset chunks (corners) for buffering.
-
-    Refactored from _buffer to allow reuse in robust erosion.
-    """
-    # 1. Identify Neighbors
-    # Assume default single ring context if called directly?
-    # Actually _buffer passed us indices and ring topology is implicit in how neighbors are found.
-    # But here we need to RE-IMPLEMENT neighbor finding?
-    # Or expect the caller to pass neighbors?
-    # To keep the signature simple and allow _buffer to just call it, we should verify what inputs we have.
-    # _buffer uses 'vertices', 'ring_counts'.
-    # Here we only recieved `vertices`, `indices`, `count`. WE MISS `ring_counts`!
-
-    # We should probably pass ring_counts or just inline the neighbor logic inside _buffer and extract the REST.
-    # Actually, extracting logic which depends on ring_counts without passing efficient structures is annoying.
-    # But `_buffer` implementation had neighbor finding inside.
-
-    # Let's revert extracting neighbor finding, and just extract the "Geometry Generation" part
-    # (Normals + Corners).
-
-    # Wait, neighbor finding is needed for Normals.
-
-    # Let's abort the extraction via `replace_file_content` if we missed dependencies.
-    # I will construct the function to be self-contained but it needs ring_counts.
-    pass
 
 
 def _convex_hull(

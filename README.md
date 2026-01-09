@@ -170,6 +170,17 @@ p_inter = p1 * p2  # Intersection
 
 # properties
 hull = p1.convex_hull
+
+# Containment
+p1.contains(geometry.Point([0.5, 0.5]))  # True
+
+# Line Segment Intersection
+seg1 = geometry.LineSegment([0., 0.], [1., 1.])
+seg2 = geometry.LineSegment([0., 1.], [1., 0.])
+ix_point = seg1.intersection(seg2)  # Point(0.5, 0.5)
+
+# Line Segment x Polygon Intersection
+clipped_segments = seg1.intersection(p1)  # List[LineSegment]
 ```
 
 ## Known Limitations
