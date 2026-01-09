@@ -5,6 +5,56 @@ import pytest
 from dshape import geometry
 
 
+class TestLineSegment:
+    def test_line_segment_creation(self):
+        seg = geometry.LineSegment([0.0, 0.0], [3.0, 4.0])
+        assert seg.p1.shape == (2,)
+        assert seg.p2.shape == (2,)
+        assert jnp.allclose(seg.p1, jnp.array([0.0, 0.0]))
+        assert jnp.allclose(seg.p2, jnp.array([3.0, 4.0]))
+
+    def test_line_segment_length(self):
+        # 3-4-5 triangle
+        seg = geometry.LineSegment([0.0, 0.0], [3.0, 4.0])
+        assert jnp.abs(seg.length - 5.0) < 1e-6
+
+    def test_line_segment_midpoint(self):
+        seg = geometry.LineSegment([0.0, 0.0], [4.0, 6.0])
+        expected = jnp.array([2.0, 3.0])
+        assert jnp.allclose(seg.midpoint, expected)
+
+    def test_line_segment_direction(self):
+        seg = geometry.LineSegment([0.0, 0.0], [3.0, 4.0])
+        # Unit vector: (3/5, 4/5)
+        expected = jnp.array([0.6, 0.8])
+        assert jnp.allclose(seg.direction, expected, atol=1e-6)
+
+    def test_line_segment_from_arrays(self):
+        p1 = jnp.array([1.0, 2.0])
+        p2 = jnp.array([4.0, 6.0])
+        seg = geometry.LineSegment(p1, p2)
+        assert jnp.abs(seg.length - 5.0) < 1e-6
+
+    def test_line_segment_jit(self):
+        seg = geometry.LineSegment([0.0, 0.0], [3.0, 4.0])
+
+        @jax.jit
+        def length_fn(s):
+            return s.length
+
+        res = length_fn(seg)
+        assert jnp.abs(res - 5.0) < 1e-6
+
+    def test_line_segment_in_trace(self):
+        @jax.jit
+        def f(s):
+            return s.midpoint
+
+        seg = geometry.LineSegment([0.0, 0.0], [4.0, 4.0])
+        res = f(seg)
+        assert jnp.allclose(res, jnp.array([2.0, 2.0]))
+
+
 class TestPolygon:
     def create_L_shape(self, origin_x=0.0, origin_y=0.0):
         # L-shape 2x2 with 1x1 removed from top-right

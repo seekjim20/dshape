@@ -21,6 +21,79 @@ from jax.typing import ArrayLike
 
 @jax.tree_util.register_pytree_node_class
 @dataclasses.dataclass
+class LineSegment:
+    """Class representing a line segment defined by two end points.
+
+    Attributes:
+        p1: Array of shape (2,) containing the first endpoint coordinates.
+        p2: Array of shape (2,) containing the second endpoint coordinates.
+    """
+
+    p1: ArrayLike
+    p2: ArrayLike
+
+    def __post_init__(self):
+        self.p1 = jnp.asarray(self.p1)
+        self.p2 = jnp.asarray(self.p2)
+
+    def tree_flatten(self):
+        return ((self.p1, self.p2), None)
+
+    @classmethod
+    def tree_unflatten(cls, aux, children):
+        return LineSegment(children[0], children[1])
+
+    @property
+    def length(self) -> Array:
+        """Computes the length of the line segment."""
+        return jnp.linalg.norm(self.p2 - self.p1)
+
+    @property
+    def midpoint(self) -> Array:
+        """Returns the midpoint of the line segment."""
+        return (self.p1 + self.p2) / 2
+
+    @property
+    def direction(self) -> Array:
+        """Returns the unit direction vector from p1 to p2."""
+        diff = self.p2 - self.p1
+        return diff / jnp.linalg.norm(diff)
+
+    def plot(self, ax=None, **kwargs) -> plt.Axes:
+        """Plots the line segment using matplotlib.
+
+        Args:
+            ax: Optional matplotlib Axes object. If None, a new figure is created.
+            **kwargs: Additional arguments passed to ax.plot (e.g., color, linewidth).
+
+        Returns:
+            The matplotlib Axes object containing the line segment plot.
+        """
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        p1_np = np.array(self.p1)
+        p2_np = np.array(self.p2)
+
+        # Default kwargs for line
+        plot_kwargs = {"color": "blue", "linewidth": 2}
+        plot_kwargs.update(kwargs)
+
+        # Draw the line segment
+        ax.plot([p1_np[0], p2_np[0]], [p1_np[1], p2_np[1]], **plot_kwargs)
+
+        # Draw black dots at endpoints
+        ax.scatter(
+            [p1_np[0], p2_np[0]], [p1_np[1], p2_np[1]], color="black", s=30, zorder=5
+        )
+
+        ax.autoscale_view()
+        ax.set_aspect("equal")
+        return ax
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclasses.dataclass
 class Polygon:
     """Class representing a polygon with a maximum vertex buffer.
 
