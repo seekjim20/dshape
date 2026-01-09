@@ -21,6 +21,63 @@ from jax.typing import ArrayLike
 
 @jax.tree_util.register_pytree_node_class
 @dataclasses.dataclass
+class Point:
+    """Class representing a single point in 2D space.
+
+    Attributes:
+        xy: Array of shape (2,) containing the point coordinates.
+    """
+
+    xy: ArrayLike
+
+    def __post_init__(self):
+        self.xy = jnp.asarray(self.xy)
+
+    def tree_flatten(self):
+        return ((self.xy,), None)
+
+    @classmethod
+    def tree_unflatten(cls, aux, children):
+        return Point(children[0])
+
+    @property
+    def x(self) -> Array:
+        """Returns the x coordinate."""
+        return self.xy[0]
+
+    @property
+    def y(self) -> Array:
+        """Returns the y coordinate."""
+        return self.xy[1]
+
+    def plot(self, ax=None, **kwargs) -> plt.Axes:
+        """Plots the point using matplotlib.
+
+        Args:
+            ax: Optional matplotlib Axes object. If None, a new figure is created.
+            **kwargs: Additional arguments passed to ax.scatter (e.g., color, s).
+
+        Returns:
+            The matplotlib Axes object containing the point plot.
+        """
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        xy_np = np.array(self.xy)
+
+        # Default kwargs
+        plot_kwargs = {"color": "black", "s": 50}
+        plot_kwargs.update(kwargs)
+
+        ax.scatter([xy_np[0]], [xy_np[1]], **plot_kwargs)
+
+        ax.autoscale_view()
+        ax.set_aspect("equal")
+        return ax
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclasses.dataclass
 class LineSegment:
     """Class representing a line segment defined by two end points.
 
