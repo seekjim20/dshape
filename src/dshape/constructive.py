@@ -23,24 +23,12 @@ def convex_hull(
     if max_vertices is None:
         max_vertices = polygon.vertices.shape[0]
 
-    # Flatten all vertices just in case, though Polygon vertices are already flat (N, 2).
-    # But we should respect `count` to ignore garbage.
-    # The `ring_counts` are ignored; hull works on point cloud of all rings.
-
     hull_verts, hull_count = core._convex_hull(
         polygon.vertices, polygon.count, max_vertices
     )
 
-    # Convex Hull is always a single ring
     ring_counts = jnp.array([hull_count], dtype=jnp.int32)
-
-    # Check for overflow?
-    # Core doesn't return overflow boolean explicitly yet, but clamps.
-    # If hull_count > max_vertices (impossible by definition if max_vertices >= input count),
-    # but theoretically if input is huge and max_vertices is small.
     overflow = hull_count >= max_vertices
-    # Strictly if it equals max_vertices it might be full, but usually overflow means "exceeded".
-    # _convex_hull clamps count.
 
     return geometry.Polygon(
         vertices=hull_verts,
