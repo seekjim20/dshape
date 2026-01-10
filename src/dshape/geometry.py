@@ -188,28 +188,22 @@ class Polygon:
             # If ring_counts is missing, we create a default 1-element array
             self.ring_counts = jnp.array([self.count], dtype=jnp.int32)
 
-    def __add__(self, other):
+    def __add__(self, other: "Polygon") -> "Polygon":
         """Union operator (+)."""
         from . import set_ops
 
-        if not isinstance(other, Polygon):
-            return NotImplemented
         return set_ops.union([self, other])
 
-    def __sub__(self, other):
+    def __sub__(self, other: "Polygon") -> "Polygon":
         """Difference operator (-)."""
         from . import set_ops
 
-        if not isinstance(other, Polygon):
-            return NotImplemented
         return set_ops.difference(self, other)
 
-    def __mul__(self, other):
+    def __mul__(self, other: "Polygon") -> "Polygon":
         """Intersection operator (*)."""
         from . import set_ops
 
-        if not isinstance(other, Polygon):
-            return NotImplemented
         return set_ops.intersection(self, other)
 
     def contains(self, point) -> bool:

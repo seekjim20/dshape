@@ -361,21 +361,6 @@ class TestOperators:
         p3 = p1 * p2
         assert jnp.abs(p3.area - 2.0) < 1e-5
 
-    def test_invalid_operands(self):
-        p1 = geometry.Rectangle(0, 0, 1, 1)
-
-        # + 1 -> TypeError (NotImplemented)
-        with pytest.raises(TypeError):
-            _ = p1 + 1
-
-        # - 1
-        with pytest.raises(TypeError):
-            _ = p1 - 1
-
-        # * 1
-        with pytest.raises(TypeError):
-            _ = p1 * 1
-
     def test_convex_hull_property(self):
         # Verify p.convex_hull calls constructive
         p1 = geometry.Rectangle(0, 0, 1, 1)
