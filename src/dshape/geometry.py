@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
 import numpy as np
-
+from . import core
 
 # type hints
 from jax import Array
@@ -221,8 +221,6 @@ class Polygon:
             # Assuming array-like
             pt_arr = jnp.asarray(point)
 
-        from . import core
-
         return core._is_point_in_polygon(
             pt_arr, self.vertices, self.count, self.ring_counts
         )
@@ -420,8 +418,6 @@ class Polygon:
         Returns:
             True if self-intersecting, False otherwise.
         """
-        from . import core
-
         return core._polygon_has_self_intersection(
             self.vertices, self.count, self.ring_counts
         )
