@@ -4,6 +4,7 @@ This module defines the core data structures for differentiable geometry,
 specifically the Polygon class which is a JAX PyTree.
 """
 
+from __future__ import annotations
 import jax
 import jax.numpy as jnp
 from functools import partial
@@ -149,8 +150,8 @@ class LineSegment:
         return ax
 
     def intersection(
-        self, other: "LineSegment | Polygon"
-    ) -> "Point | list[LineSegment] | None":
+        self, other: LineSegment | Polygon
+    ) -> Point | list[LineSegment] | None:
         """Intersection with another LineSegment or Polygon."""
         from . import set_ops
 
@@ -188,28 +189,28 @@ class Polygon:
             # If ring_counts is missing, we create a default 1-element array
             self.ring_counts = jnp.array([self.count], dtype=jnp.int32)
 
-    def __add__(self, other: "Polygon") -> "Polygon":
+    def __add__(self, other: Polygon) -> Polygon:
         """Union operator (+)."""
         from . import set_ops
 
         return set_ops.union([self, other])
 
-    def __sub__(self, other: "Polygon") -> "Polygon":
+    def __sub__(self, other: Polygon) -> Polygon:
         """Difference operator (-)."""
         from . import set_ops
 
         return set_ops.difference(self, other)
 
-    def __mul__(self, other: "Polygon") -> "Polygon":
+    def __mul__(self, other: Polygon) -> Polygon:
         """Intersection operator (*)."""
         from . import set_ops
 
         return set_ops.intersection(self, other)
 
-    def contains(self, point) -> bool:
+    def contains(self, point: Point | ArrayLike) -> bool:
         """Checks if the polygon contains the given point."""
         # Ensure point is a Point object or array-like
-        if hasattr(point, "xy"):
+        if isinstance(point, Point):
             pt_arr = point.xy
         else:
             # Assuming array-like
@@ -221,7 +222,7 @@ class Polygon:
 
     def buffer(
         self, distance: ArrayLike, max_vertices: int = 256, resolution: int = 60
-    ) -> "Polygon":
+    ) -> Polygon:
         """Computes the buffer of the polygon."""
         from . import mutation
 
@@ -229,26 +230,26 @@ class Polygon:
             self, distance, max_vertices=max_vertices, resolution=resolution
         )
 
-    def translate(self, dxy: ArrayLike) -> "Polygon":
+    def translate(self, dxy: ArrayLike) -> Polygon:
         """Translates the polygon."""
         from . import mutation
 
         return mutation.translate(self, dxy)
 
-    def rotate(self, angle_rad: ArrayLike, center: ArrayLike) -> "Polygon":
+    def rotate(self, angle_rad: ArrayLike, center: ArrayLike) -> Polygon:
         """Rotates the polygon."""
         from . import mutation
 
         return mutation.rotate(self, angle_rad, center)
 
-    def scale(self, factor: ArrayLike, origin: ArrayLike) -> "Polygon":
+    def scale(self, factor: ArrayLike, origin: ArrayLike) -> Polygon:
         """Scales the polygon."""
         from . import mutation
 
         return mutation.scale(self, factor, origin)
 
     @property
-    def convex_hull(self) -> "Polygon":
+    def convex_hull(self) -> Polygon:
         """Computes the convex hull."""
         from . import constructive
 
@@ -417,7 +418,7 @@ class Polygon:
         )
 
     @property
-    def exteriors(self) -> list["Polygon"]:
+    def exteriors(self) -> list[Polygon]:
         """Returns a list of Polygons representing the exterior rings (positive area).
 
         Note: This method is NOT JIT-compatible as it returns a Python list.
@@ -425,14 +426,14 @@ class Polygon:
         return self._extract_rings(sign=1)
 
     @property
-    def interiors(self) -> list["Polygon"]:
+    def interiors(self) -> list[Polygon]:
         """Returns a list of Polygons representing the interior rings (negative area).
 
         Note: This method is NOT JIT-compatible as it returns a Python list.
         """
         return self._extract_rings(sign=-1)
 
-    def _extract_rings(self, sign: int) -> list["Polygon"]:
+    def _extract_rings(self, sign: int) -> list[Polygon]:
         """Helper to extract rings based on area sign."""
         # Ensure we have concrete values (move to CPU if needed)
         try:
@@ -483,8 +484,8 @@ class Polygon:
 
     @classmethod
     def from_exteriors_interiors(
-        cls, exteriors: list["Polygon"], interiors: list["Polygon"] = None
-    ) -> "Polygon":
+        cls, exteriors: list[Polygon], interiors: list[Polygon] = None
+    ) -> Polygon:
         """Constructs a Polygon from explicit lists of exterior and interior rings.
 
         Args:
