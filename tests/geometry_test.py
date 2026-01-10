@@ -62,7 +62,7 @@ class TestPolygonContains:
 
     def test_simple_containment(self):
         """Test point containment in a simple polygon."""
-        poly = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
+        poly = geometry.Polygon.rectangle(0.0, 0.0, 2.0, 2.0)
 
         # Test point inside
         p_in = geometry.Point([1.0, 1.0])
@@ -74,7 +74,7 @@ class TestPolygonContains:
 
     def test_containment_array_input(self):
         """Test containment with raw array input."""
-        poly = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
+        poly = geometry.Polygon.rectangle(0.0, 0.0, 2.0, 2.0)
         assert poly.contains([1.0, 1.0])
         assert not poly.contains([3.0, 3.0])
 
@@ -82,9 +82,9 @@ class TestPolygonContains:
         """Test point containment with a hole."""
         # Outer: 4x4 square at (0,0) -> (-2,-2) to (2,2) ? No, Rectangle(x,y,w,h)
         # Rect(0,0,4,4) -> (0,0) to (4,4)
-        outer = geometry.Rectangle(0.0, 0.0, 4.0, 4.0)
+        outer = geometry.Polygon.rectangle(0.0, 0.0, 4.0, 4.0)
         # Hole: 2x2 square at (1,1) -> (1,1) to (3,3)
-        hole = geometry.Rectangle(1.0, 1.0, 2.0, 2.0)
+        hole = geometry.Polygon.rectangle(1.0, 1.0, 2.0, 2.0)
 
         poly = geometry.Polygon.from_exteriors_interiors([outer], [hole])
 
@@ -103,9 +103,9 @@ class TestPolygonContains:
     def test_island_containment(self):
         """Test point in an island inside a hole (Even-Odd rule)."""
         # Outer: Circle r=3
-        p3 = geometry.Circle((0, 0), 3.0)
+        p3 = geometry.Polygon.circle((0, 0), 3.0)
         # Hole: Circle r=2
-        p2 = geometry.Circle((0, 0), 2.0)
+        p2 = geometry.Polygon.circle((0, 0), 2.0)
         # Island: Circle r=1 (This is a union of (p3-p2) and p1)
         # But from_exteriors_interiors takes list of exteriors and interiors.
         # If we just pass multiple rings, how are they interpreted?
@@ -121,7 +121,7 @@ class TestPolygonContains:
             # Skip if set_ops not available (though it should be)
             pass
 
-        p1 = geometry.Circle((0, 0), 1.0)
+        p1 = geometry.Polygon.circle((0, 0), 1.0)
         # Annulus p3 - p2
         annulus = set_ops.difference(p3, p2)
         # Island p1 + annulus
@@ -186,13 +186,13 @@ class TestPolygon:
 
 class TestRectangle:
     def test_rectangle_area(self):
-        rect = geometry.Rectangle(0, 0, 2, 2)
+        rect = geometry.Polygon.rectangle(0, 0, 2, 2)
         area = rect.area
         assert jnp.abs(area - 4.0) < 1e-6
         assert area > 0
 
     def test_rectangle_reversed(self):
-        rect = geometry.Rectangle(0, 0, 2, 2)
+        rect = geometry.Polygon.rectangle(0, 0, 2, 2)
         rev_vertices = rect.vertices[::-1]
         rev_poly = geometry.Polygon(vertices=rev_vertices, count=4)
         area = rev_poly.area
@@ -204,7 +204,7 @@ class TestCircle:
     def test_circle_creation(self):
         x, y, r = 0.0, 0.0, 1.0
         num_edges = 100
-        circle = geometry.Circle((x, y), r, num_edges)
+        circle = geometry.Polygon.circle((x, y), r, num_edges)
 
         assert circle.count == num_edges
         assert circle.vertices.shape[0] == num_edges
@@ -215,7 +215,8 @@ class TestCircle:
 
     def test_circle_jit(self):
         x, y, r = 0.0, 0.0, 1.0
-        circle = geometry.Circle((x, y), r, num_edges=32)
+        num_edges = 32
+        circle = geometry.Polygon.circle((x, y), r, num_edges)
 
         @jax.jit
         def area_fn(p):
@@ -229,7 +230,7 @@ class TestCircle:
         def f(c):
             return c.area
 
-        circle = geometry.Circle((0, 0), 1)
+        circle = geometry.Polygon.circle((0, 0), 1)
         res = f(circle)
         assert res > 0
 
@@ -263,10 +264,10 @@ class TestPolygonAPI:
 
     def test_from_exteriors_interiors(self):
         # Create components
-        ext = geometry.Rectangle(0, 0, 3, 3)
+        ext = geometry.Polygon.rectangle(0, 0, 3, 3)
         # Create interior as a normal rectangle (positive area)
         # Factory should flip it to negative
-        hole = geometry.Rectangle(1, 1, 1, 1)
+        hole = geometry.Polygon.rectangle(1, 1, 1, 1)
 
         poly = geometry.Polygon.from_exteriors_interiors([ext], [hole])
 
@@ -283,8 +284,8 @@ class TestPolygonAPI:
         assert len(poly.interiors) == 1
 
     def test_multi_exterior(self):
-        r1 = geometry.Rectangle(0, 0, 1, 1)
-        r2 = geometry.Rectangle(2, 2, 1, 1)
+        r1 = geometry.Polygon.rectangle(0, 0, 1, 1)
+        r2 = geometry.Polygon.rectangle(2, 2, 1, 1)
 
         poly = geometry.Polygon.from_exteriors_interiors([r1, r2])
 
@@ -333,37 +334,39 @@ class TestTopologyGeometry:
 class TestOperators:
     def test_add_substitution(self):
         # p1 + p2 should be union
-        p1 = geometry.Rectangle(0, 0, 1, 1)  # Area 1
-        p2 = geometry.Rectangle(1, 0, 1, 1)  # Area 1, touches p1
+        p1 = geometry.Polygon.rectangle(0, 0, 1, 1)  # Area 1
+        p2 = geometry.Polygon.rectangle(1, 0, 1, 1)  # Area 1, touches p1
 
         # Union area should be 2
         p3 = p1 + p2
         assert jnp.abs(p3.area - 2.0) < 1e-5
 
         # Check chaining
-        p4 = geometry.Rectangle(2, 0, 1, 1)
+        p4 = geometry.Polygon.rectangle(2, 0, 1, 1)
         p5 = p1 + p2 + p4
         assert jnp.abs(p5.area - 3.0) < 1e-5
 
     def test_sub_substitution(self):
         # p1 - p2 should be difference
-        p1 = geometry.Rectangle(0, 0, 2, 2)  # Area 4
-        p2 = geometry.Rectangle(0.5, 0.5, 1, 1)  # Area 1, fully inside
+        p1 = geometry.Polygon.rectangle(0, 0, 2, 2)  # Area 4
+        p2 = geometry.Polygon.rectangle(0.5, 0.5, 1, 1)  # Area 1, fully inside
 
         p3 = p1 - p2
         assert jnp.abs(p3.area - 3.0) < 1e-5
 
     def test_mul_substitution(self):
         # p1 * p2 should be intersection
-        p1 = geometry.Rectangle(0, 0, 2, 2)  # Area 4
-        p2 = geometry.Rectangle(1, 0, 2, 2)  # Intersection [1,0] to [2,2] -> Area 2
+        p1 = geometry.Polygon.rectangle(0, 0, 2, 2)  # Area 4
+        p2 = geometry.Polygon.rectangle(
+            1, 0, 2, 2
+        )  # Intersection [1,0] to [2,2] -> Area 2
 
         p3 = p1 * p2
         assert jnp.abs(p3.area - 2.0) < 1e-5
 
     def test_convex_hull_property(self):
         # Verify p.convex_hull calls constructive
-        p1 = geometry.Rectangle(0, 0, 1, 1)
+        p1 = geometry.Polygon.rectangle(0, 0, 1, 1)
         hull = p1.convex_hull
 
         # Valid property access
@@ -373,7 +376,7 @@ class TestOperators:
 
 class TestMutationShortcuts:
     def test_translate_shortcut(self):
-        p = geometry.Rectangle(0, 0, 1, 1)  # Area 1, Center (0.5, 0.5)
+        p = geometry.Polygon.rectangle(0, 0, 1, 1)  # Area 1, Center (0.5, 0.5)
         p_moved = p.translate((1.0, 1.0))  # Center (1.5, 1.5)
 
         assert jnp.abs(p_moved.area - 1.0) < 1e-5
@@ -381,20 +384,20 @@ class TestMutationShortcuts:
         assert jnp.linalg.norm(p_moved.vertices[0] - jnp.array([1.0, 1.0])) < 1e-5
 
     def test_rotate_shortcut(self):
-        p = geometry.Rectangle(0, 0, 2, 2)  # Center (1,1)
+        p = geometry.Polygon.rectangle(0, 0, 2, 2)  # Center (1,1)
         p_rot = p.rotate(jnp.pi / 2, center=[1.0, 1.0])
 
         assert jnp.abs(p_rot.area - 4.0) < 1e-5
         assert p_rot.count == 4
 
     def test_scale_shortcut(self):
-        p = geometry.Rectangle(0, 0, 1, 1)
+        p = geometry.Polygon.rectangle(0, 0, 1, 1)
         p_scaled = p.scale(2.0, origin=[0, 0])
 
         assert jnp.abs(p_scaled.area - 4.0) < 1e-5
 
     def test_buffer_shortcut(self):
-        p = geometry.Rectangle(0, 0, 1, 1)
+        p = geometry.Polygon.rectangle(0, 0, 1, 1)
         p_buf = p.buffer(0.1)
 
         assert p_buf.area > 1.0

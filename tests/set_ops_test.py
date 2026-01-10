@@ -18,15 +18,15 @@ class TestOpsBase:
 
 class TestIntersection(TestOpsBase):
     def test_intersection_area(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
-        p2 = geometry.Rectangle(1.0, 1.0, 2.0, 2.0)
+        p1 = geometry.Polygon.rectangle(0.0, 0.0, 2.0, 2.0)
+        p2 = geometry.Polygon.rectangle(1.0, 1.0, 2.0, 2.0)
 
         inter = set_ops.intersection(p1, p2)
         area = inter.area
         assert jnp.abs(area - 1.0) < 1e-4
 
     def test_concave_intersection(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 3.0, 3.0)
+        p1 = geometry.Polygon.rectangle(0.0, 0.0, 3.0, 3.0)
         p2 = self.create_L_shape()
 
         inter = set_ops.intersection(p1, p2)
@@ -36,11 +36,11 @@ class TestIntersection(TestOpsBase):
         assert jnp.abs(area - 3.0) > 1e-4
 
     def test_gradients(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
+        p1 = geometry.Polygon.rectangle(0.0, 0.0, 2.0, 2.0)
 
         def intersection_area_fn(offset):
             # Use geometry from src if needed, or assume global import
-            p2 = geometry.Rectangle(1.0 + offset[0], 1.0 + offset[1], 2.0, 2.0)
+            p2 = geometry.Polygon.rectangle(1.0 + offset[0], 1.0 + offset[1], 2.0, 2.0)
             inter = set_ops.intersection(p1, p2)
             return inter.area
 
@@ -126,7 +126,7 @@ class TestIntersection(TestOpsBase):
         """Segment crosses polygon once, returning one segment."""
         # Segment from outside to inside the square
         seg = geometry.LineSegment([-1.0, 0.5], [0.5, 0.5])
-        poly = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        poly = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
 
         result = set_ops.line_segment_polygon_intersection(seg, poly)
         assert len(result) == 1
@@ -137,7 +137,7 @@ class TestIntersection(TestOpsBase):
     def test_polygon_intersection_through(self):
         """Segment passes through polygon, one segment result."""
         seg = geometry.LineSegment([-1.0, 0.5], [2.0, 0.5])
-        poly = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        poly = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
 
         result = set_ops.line_segment_polygon_intersection(seg, poly)
         assert len(result) == 1
@@ -147,7 +147,7 @@ class TestIntersection(TestOpsBase):
     def test_polygon_intersection_fully_inside(self):
         """Segment fully inside polygon returns itself."""
         seg = geometry.LineSegment([0.25, 0.5], [0.75, 0.5])
-        poly = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        poly = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
 
         result = set_ops.line_segment_polygon_intersection(seg, poly)
         assert len(result) == 1
@@ -157,7 +157,7 @@ class TestIntersection(TestOpsBase):
     def test_polygon_intersection_fully_outside(self):
         """Segment fully outside polygon returns empty list."""
         seg = geometry.LineSegment([2.0, 0.5], [3.0, 0.5])
-        poly = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        poly = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
 
         result = set_ops.line_segment_polygon_intersection(seg, poly)
         assert len(result) == 0
@@ -165,8 +165,8 @@ class TestIntersection(TestOpsBase):
     def test_polygon_intersection_with_hole(self):
         """Segment crossing polygon with hole returns multiple segments."""
         # Polygon with a hole in the middle
-        outer = geometry.Rectangle(0.0, 0.0, 4.0, 4.0)
-        hole = geometry.Rectangle(1.0, 1.0, 2.0, 2.0)
+        outer = geometry.Polygon.rectangle(0.0, 0.0, 4.0, 4.0)
+        hole = geometry.Polygon.rectangle(1.0, 1.0, 2.0, 2.0)
         poly_with_hole = geometry.Polygon.from_exteriors_interiors([outer], [hole])
 
         # Segment passes through outer, hole, outer
@@ -179,7 +179,7 @@ class TestIntersection(TestOpsBase):
     def test_method_with_polygon(self):
         """Test the monkey-patched intersection method with Polygon."""
         seg = geometry.LineSegment([-1.0, 0.5], [2.0, 0.5])
-        poly = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        poly = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
 
         result = seg.intersection(poly)
         assert len(result) == 1
@@ -187,16 +187,16 @@ class TestIntersection(TestOpsBase):
 
 class TestUnion(TestOpsBase):
     def test_union_convex_case(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
-        p2 = geometry.Rectangle(1.0, 0.1, 2.0, 2.0)
+        p1 = geometry.Polygon.rectangle(0.0, 0.0, 2.0, 2.0)
+        p2 = geometry.Polygon.rectangle(1.0, 0.1, 2.0, 2.0)
 
         union_poly = set_ops.union([p1, p2])
         area = union_poly.area
         assert jnp.abs(area - 6.1) < 1e-4
 
     def test_union_non_convex_case(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
-        p2 = geometry.Rectangle(1.5, 1.5, 2.0, 2.0)
+        p1 = geometry.Polygon.rectangle(0.0, 0.0, 2.0, 2.0)
+        p2 = geometry.Polygon.rectangle(1.5, 1.5, 2.0, 2.0)
 
         union_poly = set_ops.union([p1, p2])
         area = union_poly.area
@@ -205,7 +205,7 @@ class TestUnion(TestOpsBase):
 
     def test_concave_union(self):
         p1 = self.create_L_shape()
-        p2 = geometry.Rectangle(1.0, 1.0, 1.0, 1.0)
+        p2 = geometry.Polygon.rectangle(1.0, 1.0, 1.0, 1.0)
 
         union_poly = set_ops.union([p1, p2])
         area = union_poly.area
@@ -244,9 +244,11 @@ class TestUnion(TestOpsBase):
 
     def test_union_three_polys(self):
         # Union of 3 squares in a row
-        p1 = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
-        p2 = geometry.Rectangle(0.5, 0.0, 1.0, 1.0)  # Overlaps p1
-        p3 = geometry.Rectangle(1.0, 0.0, 1.0, 1.0)  # Overlaps p2 (touches p1 edge)
+        p1 = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
+        p2 = geometry.Polygon.rectangle(0.5, 0.0, 1.0, 1.0)  # Overlaps p1
+        p3 = geometry.Polygon.rectangle(
+            1.0, 0.0, 1.0, 1.0
+        )  # Overlaps p2 (touches p1 edge)
 
         # Expected: Rectangle(0, 0, 2, 1) basically?
         # 0.5 overlap.
@@ -263,33 +265,33 @@ class TestUnion(TestOpsBase):
 
 class TestDifference(TestOpsBase):
     def test_difference_overlap(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 2.0, 2.0)
-        p2 = geometry.Rectangle(1.0, 1.0, 2.0, 2.0)
+        p1 = geometry.Polygon.rectangle(0.0, 0.0, 2.0, 2.0)
+        p2 = geometry.Polygon.rectangle(1.0, 1.0, 2.0, 2.0)
 
         diff_poly = set_ops.difference(p1, p2)
         area = diff_poly.area
         assert jnp.abs(area - 3.0) < 1e-3
 
     def test_difference_produces_concave(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 3.0, 1.0)
+        p1 = geometry.Polygon.rectangle(0.0, 0.0, 3.0, 1.0)
         # Use overlapping rectangle that crosses the boundary to avoid collinear clipping issues
-        p2 = geometry.Rectangle(1.0, -0.5, 1.0, 1.0)
+        p2 = geometry.Polygon.rectangle(1.0, -0.5, 1.0, 1.0)
 
         diff_poly = set_ops.difference(p1, p2)
         area = diff_poly.area
         assert jnp.abs(area - 2.5) < 1e-3
 
     def test_hole_creation(self):
-        p1 = geometry.Rectangle(0.0, 0.0, 3.0, 3.0)
-        p2 = geometry.Rectangle(1.0, 1.0, 1.0, 1.0)
+        p1 = geometry.Polygon.rectangle(0.0, 0.0, 3.0, 3.0)
+        p2 = geometry.Polygon.rectangle(1.0, 1.0, 1.0, 1.0)
 
         diff_poly = set_ops.difference(p1, p2)
         area = diff_poly.area
         assert jnp.abs(area - 8.0) < 1e-3
 
     def test_p1_inside_p2(self):
-        p1 = geometry.Rectangle(1.0, 1.0, 1.0, 1.0)
-        p2 = geometry.Rectangle(0.0, 0.0, 3.0, 3.0)
+        p1 = geometry.Polygon.rectangle(1.0, 1.0, 1.0, 1.0)
+        p2 = geometry.Polygon.rectangle(0.0, 0.0, 3.0, 3.0)
 
         diff_poly = set_ops.difference(p1, p2)
         area = diff_poly.area
@@ -323,11 +325,11 @@ class TestTopologySetOps(TestOpsBase):
 
     def test_difference_creates_hole(self):
         # P1: 10x10 square
-        p1 = geometry.Rectangle(0.0, 0.0, 10.0, 10.0)
+        p1 = geometry.Polygon.rectangle(0.0, 0.0, 10.0, 10.0)
 
         # P2: 4x4 square in middle
         # Rectangle(x,y,w,h) -> starts at (3,3) size 4x4 -> ends at (7,7)
-        p2 = geometry.Rectangle(3.0, 3.0, 4.0, 4.0)
+        p2 = geometry.Polygon.rectangle(3.0, 3.0, 4.0, 4.0)
 
         res = set_ops.difference(p1, p2, max_vertices=32, max_rings=4)
 
@@ -345,9 +347,9 @@ class TestTopologySetOps(TestOpsBase):
         # p1: Inner circle (r=1)
         # p2: Hole circle (r=2)
         # p3: Outer circle (r=3)
-        p1 = geometry.Circle((0, 0), 1.0)
-        p2 = geometry.Circle((0, 0), 2.0)
-        p3 = geometry.Circle((0, 0), 3.0)
+        p1 = geometry.Polygon.circle((0, 0), 1.0, num_edges=32)
+        p2 = geometry.Polygon.circle((0, 0), 2.0, num_edges=32)
+        p3 = geometry.Polygon.circle((0, 0), 3.0, num_edges=32)
 
         # p3 - p2 -> Annulus (2 to 3)
         p3_minus_p2 = set_ops.difference(p3, p2)

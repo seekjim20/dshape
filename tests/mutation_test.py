@@ -18,7 +18,7 @@ class TestOpsBase:
 
 class TestBuffer(TestOpsBase):
     def test_buffer_square_positive(self):
-        rect = geometry.Rectangle(-1, -1, 2, 2)
+        rect = geometry.Polygon.rectangle(-1, -1, 2, 2)
         dist = 0.5
         buffered = mutation.buffer(rect, dist)
         area = buffered.area
@@ -27,7 +27,7 @@ class TestBuffer(TestOpsBase):
         assert not buffered.self_intersect
 
     def test_buffer_square_negative(self):
-        rect = geometry.Rectangle(-1, -1, 2, 2)
+        rect = geometry.Polygon.rectangle(-1, -1, 2, 2)
         dist = -0.5
         buffered = mutation.buffer(rect, dist)
         area = buffered.area
@@ -52,7 +52,7 @@ class TestBuffer(TestOpsBase):
         assert not eroded.self_intersect
 
     def test_buffer_circle(self):
-        c = geometry.Circle((0, 0), 1, num_edges=32)
+        c = geometry.Polygon.circle((0, 0), 1, num_edges=32)
         dist = 0.5
         buffered = mutation.buffer(c, dist)
         expected_area = jnp.pi * (1.5**2)
@@ -61,7 +61,7 @@ class TestBuffer(TestOpsBase):
         assert not buffered.self_intersect
 
     def test_large_negative_buffer(self):
-        rect = geometry.Rectangle(-1, -1, 2, 2)
+        rect = geometry.Polygon.rectangle(-1, -1, 2, 2)
         dist = -2.0
         buffered = mutation.buffer(rect, dist)
         area = buffered.area
@@ -149,7 +149,7 @@ class TestBuffer(TestOpsBase):
 
     def test_buffer_overflow(self):
         # Create a circle with many edges
-        circle = geometry.Circle((0, 0), 1.0, num_edges=50)  # 50 vertices
+        circle = geometry.Polygon.circle((0, 0), 1.0, num_edges=50)  # 50 vertices
 
         # Buffer it with a VERY small max_vertices to force overflow
         # Buffer usually increases vertex count significantly (especially with round joins)
@@ -173,7 +173,7 @@ class TestBuffer(TestOpsBase):
 
 class TestTranslate(TestOpsBase):
     def test_translate_rectangle(self):
-        rect = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        rect = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
         dx, dy = 1.0, 0.5
         shifted = mutation.translate(rect, (dx, dy))
 
@@ -184,7 +184,7 @@ class TestTranslate(TestOpsBase):
         assert not shifted.self_intersect
 
     def test_offset_gradient(self):
-        rect = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        rect = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
 
         def loss(d):
             shifted = mutation.translate(rect, d)
@@ -267,7 +267,7 @@ class TestRotate(TestOpsBase):
         # (1,1) -> (-1,1)
         # (0,1) -> (-1,0)
 
-        sq = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        sq = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
         angle = jnp.pi / 2.0
         center = jnp.array([0.0, 0.0])
 
@@ -292,7 +292,7 @@ class TestRotate(TestOpsBase):
         # If we rotate a circle around its center, vertices change but shape remains (approx)
 
         # Square centered at 0
-        sq = geometry.Rectangle(-1.0, -1.0, 2.0, 2.0)  # Center (0,0)
+        sq = geometry.Polygon.rectangle(-1.0, -1.0, 2.0, 2.0)  # Center (0,0)
 
         # Rotate 45 deg
         angle = jnp.pi / 4.0
@@ -311,7 +311,7 @@ class TestScale(TestOpsBase):
     def test_scale_uniform_origin(self):
         # Scale square by 2.0 around (0,0)
         # Square [0,0] to [1,1] -> [0,0] to [2,2]
-        sq = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        sq = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
         factor = 2.0
         origin = jnp.array([0.0, 0.0])
 
@@ -330,7 +330,7 @@ class TestScale(TestOpsBase):
         # Square [0,0] to [1,1] -> [0,0] to [2, 0.5]
         # Area should be unchanged (1.0 * 2.0 * 0.5 = 1.0)
 
-        sq = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
+        sq = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
         factor = jnp.array([2.0, 0.5])
         origin = jnp.array([0.0, 0.0])
 
@@ -349,7 +349,7 @@ class TestScale(TestOpsBase):
         # [-1,-1] to [1,1] (side 2, area 4)
         # -> [-0.5, -0.5] to [0.5, 0.5] (side 1, area 1)
 
-        sq = geometry.Rectangle(-1.0, -1.0, 2.0, 2.0)
+        sq = geometry.Polygon.rectangle(-1.0, -1.0, 2.0, 2.0)
         factor = 0.5
         origin = jnp.array([0.0, 0.0])
 

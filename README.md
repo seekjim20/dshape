@@ -59,11 +59,11 @@ triangle = geometry.Polygon(vertices=vertices, count=3)
 
 ```python
 # Rectangle defined by (x, y, width, height)
-rect = geometry.Rectangle(0., 0., 5., 3.)
+rect = geometry.Polygon.rectangle(0., 0., 5., 3.)
 
 # Circle defined by (center_xy, radius)
 # approximated by a polygon with `num_edges` (default 32)
-circle = geometry.Circle((0., 0.), 2.0, num_edges=64)
+circle = geometry.Polygon.circle((0., 0.), 2.0, num_edges=64)
 ```
 ![Primitives](docs/images/usage_primitives.png)
 
@@ -71,8 +71,8 @@ circle = geometry.Circle((0., 0.), 2.0, num_edges=64)
 To create shapes with holes, use the `from_exteriors_interiors` factory. It accepts lists of polygons (shells and holes) and handles the data layout for you.
 
 ```python
-outer = geometry.Rectangle(0., 0., 10., 10.)
-inner_hole = geometry.Circle((5., 5.), 2.0)
+outer = geometry.Polygon.rectangle(0., 0., 10., 10.)
+inner_hole = geometry.Polygon.circle((5., 5.), 2.0)
 
 # Square with a circular hole
 shape_with_hole = geometry.Polygon.from_exteriors_interiors(
@@ -86,8 +86,8 @@ shape_with_hole = geometry.Polygon.from_exteriors_interiors(
 A single `Polygon` object can represent multiple disjoint areas (a "MultiPolygon" in other conventions) by simply having multiple exterior rings.
 
 ```python
-island1 = geometry.Rectangle(0., 0., 2., 2.)
-island2 = geometry.Circle((5., 5.), 1.0)
+island1 = geometry.Polygon.rectangle(0., 0., 2., 2.)
+island2 = geometry.Polygon.circle((5., 5.), 1.0)
 
 # Single object representing both shapes
 disjoint_shape = geometry.Polygon.from_exteriors_interiors(
@@ -101,9 +101,9 @@ disjoint_shape = geometry.Polygon.from_exteriors_interiors(
 
 ```python
 # Annulus with an island in the center
-outer = geometry.Circle((0., 0.), 5.0)  # Human perception: Main shell
-hole = geometry.Circle((0., 0.), 3.0)   # Human perception: Hole
-island = geometry.Circle((0., 0.), 1.0) # Human perception: Island inside hole
+outer = geometry.Polygon.circle((0., 0.), 5.0)  # Human perception: Main shell
+hole = geometry.Polygon.circle((0., 0.), 3.0)   # Human perception: Hole
+island = geometry.Polygon.circle((0., 0.), 1.0) # Human perception: Island inside hole
 
 # We pass 'island' as an EXTERIOR because it is positive area
 complex_shape = geometry.Polygon.from_exteriors_interiors(
@@ -141,8 +141,8 @@ buffered = mutation.buffer(poly, distance=0.1)
 eroded = mutation.buffer(poly, distance=-0.1)
 
 # Set Operations
-p1 = geometry.Rectangle(0.0, 0.0, 1.0, 1.0)
-p2 = geometry.Rectangle(0.5, 0.5, 1.0, 1.0)
+p1 = geometry.Polygon.rectangle(0.0, 0.0, 1.0, 1.0)
+p2 = geometry.Polygon.rectangle(0.5, 0.5, 1.0, 1.0)
 
 union_res = set_ops.union([p1, p2])
 inter_res = set_ops.intersection(p1, p2)

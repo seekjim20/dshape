@@ -51,7 +51,7 @@ class Point:
         """Returns the y coordinate."""
         return self.xy[1]
 
-    def plot(self, ax=None, **kwargs) -> plt.Axes:
+    def plot(self, ax: plt.Axes | None = None, **kwargs) -> plt.Axes:
         """Plots the point using matplotlib.
 
         Args:
@@ -117,7 +117,7 @@ class LineSegment:
         diff = self.p2 - self.p1
         return diff / jnp.linalg.norm(diff)
 
-    def plot(self, ax=None, **kwargs) -> plt.Axes:
+    def plot(self, ax: plt.Axes | None = None, **kwargs) -> plt.Axes:
         """Plots the line segment using matplotlib.
 
         Args:
@@ -188,6 +188,47 @@ class Polygon:
             # We treat scalar count as single ring
             # If ring_counts is missing, we create a default 1-element array
             self.ring_counts = jnp.array([self.count], dtype=jnp.int32)
+
+    @classmethod
+    def rectangle(
+        cls, x: ArrayLike, y: ArrayLike, w: ArrayLike, h: ArrayLike
+    ) -> Polygon:
+        """Creates a rectangle polygon.
+
+        Args:
+            x: x coordinate of the bottom-left corner.
+            y: y coordinate of the bottom-left corner.
+            w: width of the rectangle.
+            h: height of the rectangle.
+
+        Returns:
+            A Polygon object representing the rectangle.
+        """
+        vertices = jnp.array(
+            [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], dtype=jnp.float32
+        )
+        return cls(vertices=vertices, count=4, ring_counts=jnp.array([4]))
+
+    @classmethod
+    def circle(
+        cls, center_xy: ArrayLike, radius: ArrayLike, num_edges: int = 30
+    ) -> Polygon:
+        """Creates a circle polygon.
+
+        Args:
+            center_xy: (x, y) coordinates of the center.
+            radius: radius of the circle.
+            num_edges: number of edges to use for the circle.
+
+        Returns:
+            A Polygon object representing the circle.
+        """
+        theta = jnp.linspace(0, 2 * jnp.pi, num_edges, endpoint=False)
+        offsets = radius * jnp.stack([jnp.cos(theta), jnp.sin(theta)], axis=1)
+        vertices = (jnp.array(center_xy) + offsets).astype(jnp.float32)
+        return cls(
+            vertices=vertices, count=num_edges, ring_counts=jnp.array([num_edges])
+        )
 
     def __add__(self, other: Polygon) -> Polygon:
         """Union operator (+)."""
@@ -313,7 +354,7 @@ class Polygon:
         areas = jax.vmap(ring_area)(jnp.arange(max_rings))
         return jnp.sum(areas)
 
-    def plot(self, ax=None, **kwargs) -> plt.Axes:
+    def plot(self, ax: plt.Axes | None = None, **kwargs) -> plt.Axes:
         """Plots the polygon using matplotlib.
 
         Args:
@@ -538,39 +579,3 @@ class Polygon:
         r_counts = jnp.array(ring_counts_list, dtype=jnp.int32)
 
         return cls(vertices=all_v, count=total_count, ring_counts=r_counts)
-
-
-@jax.tree_util.register_pytree_node_class
-class Rectangle(Polygon):
-    """Rectangle polygon."""
-
-    def __init__(self, x, y, w, h):
-        vertices = jnp.array(
-            [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], dtype=jnp.float32
-        )
-        # Initialize parent Polygon
-        super().__init__(vertices=vertices, count=4, ring_counts=jnp.array([4]))
-
-
-@jax.tree_util.register_pytree_node_class
-class Circle(Polygon):
-    """Circle polygon approximated by N edges."""
-
-    def __init__(self, center_xy, radius, num_edges=32):
-        # Generate angles
-        theta = jnp.linspace(0, 2 * jnp.pi, num_edges, endpoint=False)
-
-        # Offsets
-        cos_t = jnp.cos(theta)
-        sin_t = jnp.sin(theta)
-        offsets = radius * jnp.stack([cos_t, sin_t], axis=1)
-
-        # Center
-        center = jnp.array(center_xy)
-
-        vertices = (center + offsets).astype(jnp.float32)
-
-        # Initialize parent Polygon
-        super().__init__(
-            vertices=vertices, count=num_edges, ring_counts=jnp.array([num_edges])
-        )

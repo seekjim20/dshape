@@ -9,7 +9,7 @@ class TestConstructive:
     def test_convex_hull_convex_identity(self):
         # Hull of a square is the square itself
         # Order might shift, but area should be same
-        rect = geometry.Rectangle(0, 0, 1, 1)
+        rect = geometry.Polygon.rectangle(0, 0, 1, 1)
         hull = constructive.convex_hull(rect)
 
         assert jnp.abs(hull.area - rect.area) < 1e-5
@@ -78,7 +78,7 @@ class TestConstructive:
         def calculate_area(radius):
             radius = jnp.array(radius)
             # Circle constructor uses tuple (xy) and radius since refactor
-            c = geometry.Circle((0.0, 0.0), radius, num_edges=50)
+            c = geometry.Polygon.circle((0.0, 0.0), radius, num_edges=50)
             hull = constructive.convex_hull(c)
             return hull.area
 

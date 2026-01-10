@@ -9,7 +9,7 @@ def test_convex_hull_grad():
     def calculate_area(radius):
         radius = jnp.array(radius)  # Ensure array
         # Create a circle centered at 0,0
-        c = dshape.geometry.Circle((0.0, 0.0), radius, num_edges=50)
+        c = dshape.geometry.Polygon.circle((0.0, 0.0), radius)
         # Compute hull
         hull = c.convex_hull
         # For a circle, hull area should be approx equal to circle area
