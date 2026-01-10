@@ -148,6 +148,19 @@ class LineSegment:
         ax.set_aspect("equal")
         return ax
 
+    def intersection(
+        self, other: "LineSegment | Polygon"
+    ) -> "Point | list[LineSegment] | None":
+        """Intersection with another LineSegment or Polygon."""
+        from . import set_ops
+
+        if isinstance(other, LineSegment):
+            return set_ops.line_segment_intersection(self, other)
+        elif isinstance(other, Polygon):
+            return set_ops.line_segment_polygon_intersection(self, other)
+        else:
+            raise TypeError(f"Cannot compute intersection with {type(other).__name__}")
+
 
 @jax.tree_util.register_pytree_node_class
 @dataclasses.dataclass
@@ -174,6 +187,80 @@ class Polygon:
             # We treat scalar count as single ring
             # If ring_counts is missing, we create a default 1-element array
             self.ring_counts = jnp.array([self.count], dtype=jnp.int32)
+
+    def __add__(self, other):
+        """Union operator (+)."""
+        from . import set_ops
+
+        if not isinstance(other, Polygon):
+            return NotImplemented
+        return set_ops.union([self, other])
+
+    def __sub__(self, other):
+        """Difference operator (-)."""
+        from . import set_ops
+
+        if not isinstance(other, Polygon):
+            return NotImplemented
+        return set_ops.difference(self, other)
+
+    def __mul__(self, other):
+        """Intersection operator (*)."""
+        from . import set_ops
+
+        if not isinstance(other, Polygon):
+            return NotImplemented
+        return set_ops.intersection(self, other)
+
+    def contains(self, point) -> bool:
+        """Checks if the polygon contains the given point."""
+        # Ensure point is a Point object or array-like
+        if hasattr(point, "xy"):
+            pt_arr = point.xy
+        else:
+            # Assuming array-like
+            pt_arr = jnp.asarray(point)
+
+        from . import core
+
+        return core._is_point_in_polygon(
+            pt_arr, self.vertices, self.count, self.ring_counts
+        )
+
+    def buffer(
+        self, distance: ArrayLike, max_vertices: int = 256, resolution: int = 60
+    ) -> "Polygon":
+        """Computes the buffer of the polygon."""
+        from . import mutation
+
+        return mutation.buffer(
+            self, distance, max_vertices=max_vertices, resolution=resolution
+        )
+
+    def translate(self, dxy: ArrayLike) -> "Polygon":
+        """Translates the polygon."""
+        from . import mutation
+
+        return mutation.translate(self, dxy)
+
+    def rotate(self, angle_rad: ArrayLike, center: ArrayLike) -> "Polygon":
+        """Rotates the polygon."""
+        from . import mutation
+
+        return mutation.rotate(self, angle_rad, center)
+
+    def scale(self, factor: ArrayLike, origin: ArrayLike) -> "Polygon":
+        """Scales the polygon."""
+        from . import mutation
+
+        return mutation.scale(self, factor, origin)
+
+    @property
+    def convex_hull(self) -> "Polygon":
+        """Computes the convex hull."""
+        from . import constructive
+
+        return constructive.convex_hull(self)
 
     def tree_flatten(self):
         return ((self.vertices, self.count, self.ring_counts, self.overflow), None)
@@ -333,7 +420,11 @@ class Polygon:
         Returns:
             True if self-intersecting, False otherwise.
         """
-        return _has_self_intersection(self.vertices, self.count, self.ring_counts)
+        from . import core
+
+        return core._polygon_has_self_intersection(
+            self.vertices, self.count, self.ring_counts
+        )
 
     @property
     def exteriors(self) -> list["Polygon"]:
@@ -492,108 +583,3 @@ class Circle(Polygon):
         super().__init__(
             vertices=vertices, count=num_edges, ring_counts=jnp.array([num_edges])
         )
-
-
-def _has_self_intersection(
-    vertices: ArrayLike, count: ArrayLike, ring_counts: ArrayLike = None
-) -> bool:
-    """Check if a polygon self-intersects.
-
-    O(N^2) check.
-
-    Args:
-        vertices: Polygon vertices (N, 2).
-        count: Total number of valid vertices.
-        ring_counts: Optional array of ring counts. If None, assumes single ring.
-
-    Returns:
-        True if self-intersecting.
-    """
-    max_v = vertices.shape[0]
-
-    if ring_counts is None:
-        ring_counts = jnp.array([count])
-
-    # Calculate start indices for each ring
-    starts = jnp.cumsum(jnp.pad(ring_counts, (1, 0))[:-1])
-    num_rings = ring_counts.shape[0]
-
-    indices = jnp.arange(max_v)
-
-    def get_next(i):
-        # Determine which ring i belongs to
-        # ring k: starts[k] <= i < starts[k] + ring_counts[k]
-
-        # We can scan rings to find the one.
-        # Since we just need to return the next index in the ring.
-
-        # Vectorized check better than scan if num_rings is small.
-        # Assume num_rings <= max_v or logic is efficient enough.
-
-        # Map i to ring index k
-        # starts <= i -> mask
-        # Last True is the ring index.
-        is_after_start = i >= starts
-        # We need the last true index.
-        # sum - 1 gives index if they are sorted and contiguous starts?
-        # Yes, starts are monotonic.
-        k = jnp.sum(is_after_start) - 1
-
-        # Clamp k valid
-        k = jnp.maximum(0, jnp.minimum(k, num_rings - 1))
-
-        s = starts[k]
-        c = ring_counts[k]
-
-        # Local index
-        local = i - s
-
-        # Next local
-        # If c=0, this logic is moot but safe_c handles mod
-        safe_c = jnp.maximum(c, 1)
-        next_local = (local + 1) % safe_c
-
-        return s + next_local
-
-    idx_next_map = jax.vmap(get_next)(indices)
-
-    def check_edge_i(i):
-        p1 = vertices[i]
-        p2 = vertices[idx_next_map[i]]
-        valid_i = i < count
-
-        def check_edge_j(j):
-            q1 = vertices[j]
-            q2 = vertices[idx_next_map[j]]
-            valid_j = j < count
-
-            def orientation(a, b, c):
-                val = (b[1] - a[1]) * (c[0] - b[0]) - (b[0] - a[0]) * (c[1] - b[1])
-                return val
-
-            o1 = orientation(p1, p2, q1)
-            o2 = orientation(p1, p2, q2)
-            o3 = orientation(q1, q2, p1)
-            o4 = orientation(q1, q2, p2)
-
-            intersect = (o1 * o2 < -1e-9) & (o3 * o4 < -1e-9)
-
-            # Adjacency check
-            next_i = idx_next_map[i]
-            next_j = idx_next_map[j]
-
-            is_identity = i == j
-            is_adj_1 = i == next_j
-            is_adj_2 = next_i == j
-
-            is_adjacent = is_identity | is_adj_1 | is_adj_2
-
-            should_check = valid_i & valid_j & (i < j) & (~is_adjacent)
-
-            return intersect & should_check
-
-        row_res = jax.vmap(check_edge_j)(indices)
-        return jnp.any(row_res)
-
-    total_res = jax.vmap(check_edge_i)(indices)
-    return jnp.any(total_res)
